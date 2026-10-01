@@ -16,9 +16,9 @@ export type Tarneeb61ReactionContext = {
   contractSucceeded: boolean;
 };
 
-type ReactionMessage = Pick<Tarneeb61Reaction, 'id' | 'message'>;
+export type ReactionMessage = Pick<Tarneeb61Reaction, 'id' | 'message'>;
 
-const successMessages: ReactionMessage[] = [
+export const TARNEEB_SUCCESS_MESSAGES: ReactionMessage[] = [
   { id: 'success-1', message: 'عاااااش يا وحش' },
   { id: 'success-2', message: 'ضمن وجاب السبع' },
   { id: 'success-3', message: 'وحش ولككك' },
@@ -31,7 +31,7 @@ const successMessages: ReactionMessage[] = [
   { id: 'success-10', message: 'تم الدعس🐾' }
 ];
 
-const failureMessages: ReactionMessage[] = [
+export const TARNEEB_FAILURE_MESSAGES: ReactionMessage[] = [
   { id: 'failure-1', message: 'انكسر بخشي 🤣' },
   { id: 'failure-2', message: 'مين الحمار اللي ضمن ؟!' },
   { id: 'failure-3', message: 'طيب ما بتعرف تلعب شدة ...ليش لتصرع طيزنا وتقول لعبوني ؟!' },
@@ -50,7 +50,15 @@ const failureMessages: ReactionMessage[] = [
   { id: 'failure-16', message: 'شو أبو منير اللي ضمن ؟!' }
 ];
 
-const kabootMessage: Tarneeb61Reaction = {
+export const TARNEEB_PRIVATE_FAILURE_MESSAGES: ReactionMessage[] = [
+  { id: 'failure-private-1', message: 'انكسر الاير' },
+  { id: 'failure-private-2', message: 'كس اخت هالقعدة ولو' },
+  { id: 'failure-private-3', message: 'انكسر الحمار ريتو يلحس طيز أبو منير' },
+  { id: 'failure-private-4', message: 'أبو ربيع ما اشتغل هالشغل الايري' },
+  { id: 'failure-private-5', message: 'أبو أسامة اللي قلك تلعب هاللعب الطيزي؟؟!' }
+];
+
+export const kabootMessage: Tarneeb61Reaction = {
   id: 'kaboot',
   message: 'سجل كبووووود للملك ✌️🖤',
   variant: 'kaboot',
@@ -58,7 +66,7 @@ const kabootMessage: Tarneeb61Reaction = {
   badge: '13 / 13'
 };
 
-const brokenSevenMessage: Tarneeb61Reaction = {
+export const brokenSevenMessage: Tarneeb61Reaction = {
   id: 'broken-seven',
   message: 'ولو علي الحرام حمار ومعبى ببنطرون ...ضمنت 7 وانكسرت ولساتك قاعد ...قووووم خرايي عليك وعاللي مسكك ورق شدة شو حمار ... 7 وتنكسر يا الله ...قوم تسطح وابصق بالهوا خليها تنزل عليك حرام تكون بني ادم يا زلمة ... حدا يقول لصاحب القعدة يقلع هالحمار',
   variant: 'broken-seven',
@@ -79,7 +87,7 @@ export function getTarneeb61Reaction(
   if (!context.contractSucceeded && context.bid === 7) return brokenSevenMessage;
   if (context.contractSucceeded && context.actualTricks === 13) return kabootMessage;
   const variant = context.contractSucceeded ? 'success' : 'failure';
-  const selected = pickRandomMessage(variant === 'success' ? successMessages : failureMessages, previousId, random);
+  const selected = pickRandomMessage(variant === 'success' ? TARNEEB_SUCCESS_MESSAGES : [...TARNEEB_FAILURE_MESSAGES, ...TARNEEB_PRIVATE_FAILURE_MESSAGES], previousId, random);
   return { ...selected, variant, durationMs: 4600 };
 }
 

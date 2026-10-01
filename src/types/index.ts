@@ -64,7 +64,9 @@ export type RulesSnapshot =
   | { kind: 'tarneeb-61-v2'; version: 2; rules: Tarneeb61RulesV2 }
   | { kind: 'tarneeb-41-v2'; version: 2; rules: Tarneeb41RulesV2 }
   | { kind: 'fast-trix-v3'; version: 3 }
-  | { kind: 'cc-v1'; version: 1 };
+  | { kind: 'fast-trix-v4'; version: 4 }
+  | { kind: 'cc-v1'; version: 1 }
+  | { kind: 'cc-v2'; version: 2 };
 
 export type GameSession = {
   id: string;
@@ -78,7 +80,7 @@ export type GameSession = {
   currentRound: number;
   scores: Record<string, number>;
   rulesSnapshot: RulesSnapshot;
-  rulesVersion?: 1 | 2 | 3;
+  rulesVersion?: 1 | 2 | 3 | 4;
   trixMode?: TrixMode;
   firstKingdomOwnerId?: string;
   winnerIds?: string[];
@@ -133,11 +135,23 @@ export type Tarneeb41RoundInput = {
 export type ManualAdjustmentInput = { targetId: string; amount: number; reason?: string };
 
 export type OldManMetadata = { eaterPlayerId: string; doubled: boolean };
-export type LashRoundInput = {
+export type SoloLashRoundInput = {
+  kind: 'lash-solo';
+  scoresByPlayer: Record<string, number>;
+  oldMan: OldManMetadata;
+};
+export type PartnershipLashRoundInput = {
+  kind: 'lash-partnership';
+  scoresByTeam: Record<string, number>;
+  oldMan: OldManMetadata;
+};
+/** Read-only compatibility for sessions created by rules V3. New rounds never use it. */
+export type LegacyLashRoundInput = {
   kind: 'lash';
   scoresByPlayer: Record<string, number>;
   oldMan: OldManMetadata;
 };
+export type LashRoundInput = SoloLashRoundInput | PartnershipLashRoundInput | LegacyLashRoundInput;
 export type TrixRankingInput = { kind: 'trix-ranking'; finishingOrder: [string, string, string, string] };
 
 export type GameRound = {
@@ -166,10 +180,11 @@ export type AppSettings = {
   lastActiveGameId?: string;
   preferredTarneebTarget?: number;
   contextualMessages?: boolean;
+  roastIntensity?: 1 | 2 | 3 | 4;
 };
 
-export type MessageCategory = 'fast-lash' | 'fast-trix' | 'old-man' | 'tarneeb-break' | 'cc-lash';
-export type MessageEvent = 'lash-owner-score' | 'trix-partnership' | 'old-man-owner' | 'tarneeb-break';
+export type MessageCategory = 'fast-lash' | 'fast-trix' | 'old-man' | 'tarneeb-success' | 'tarneeb-failure' | 'tarneeb-special' | 'cc-lash';
+export type MessageEvent = 'lash-owner-score' | 'trix-partnership' | 'old-man-owner' | 'old-man-partner' | 'old-man-opponent' | 'tarneeb-success' | 'tarneeb-failure' | 'tarneeb-special';
 export type MessageRule = {
   id: string;
   factoryId: string;
@@ -181,12 +196,25 @@ export type MessageRule = {
   ownerScore?: number;
   partnerScore?: number;
   doubled?: boolean;
+  minOccurrences?: number;
   template: string;
   durationMs: number;
   enabled: boolean;
   priority: number;
+  intensity?: 1 | 2 | 3 | 4;
+  alternativeGroupId?: string;
   userAdded?: boolean;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type SummarySegmentCategory = 'opening' | 'winner' | 'disaster' | 'partnership' | 'trix' | 'kingdom' | 'old-man' | 'comeback' | 'closing' | 'title';
+export type ContentOverride = {
+  id: string;
+  factoryId: string;
+  category: SummarySegmentCategory;
+  template?: string;
+  enabled?: boolean;
   updatedAt: string;
 };
 
@@ -200,7 +228,7 @@ export type RulePreset = {
 
 export type BackupFile = {
   app: 'Lammatna' | 'KOK';
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   exportedAt: string;
   data: {
     games: GameSession[];
@@ -208,5 +236,7 @@ export type BackupFile = {
     players: PlayerProfile[];
     presets: RulePreset[];
     settings: AppSettings[];
+    messageRules?: MessageRule[];
+    contentOverrides?: ContentOverride[];
   };
 };

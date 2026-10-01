@@ -1,4 +1,4 @@
-import type { GamePlayer, GameRound, GameSession, GameTeam, LashRoundInput, TrixRankingInput } from '../../types';
+import type { GamePlayer, GameRound, GameSession, GameTeam, LashRoundInput, PartnershipLashRoundInput, SoloLashRoundInput, TrixRankingInput } from '../../types';
 
 export const LASH_TOTAL = -500;
 export const TRIX_TOTAL = 500;
@@ -10,8 +10,15 @@ export function lashTotal(scores: Record<string, number>): number {
   return Object.values(scores).reduce((sum, score) => sum + score, 0);
 }
 
-export function validateLashScores(scores: Record<string, number>, players: GamePlayer[]): boolean {
-  return players.length === 4 && players.every((player) => Number.isInteger(scores[player.id])) && lashTotal(scores) === LASH_TOTAL;
+export function validateLashScores(scores: Record<string, number>, expectedIds: string[]): boolean {
+  return expectedIds.length > 0 && expectedIds.every((id) => Number.isInteger(scores[id])) && Object.keys(scores).length === expectedIds.length && lashTotal(scores) === LASH_TOTAL;
+}
+
+export function validateLashInput(input: LashRoundInput, game: GameSession): boolean {
+  if (game.trixMode === 'partnership') {
+    return Boolean(game.teams?.length === 2 && input.kind === 'lash-partnership' && validateLashScores(input.scoresByTeam, game.teams.map((team) => team.id)));
+  }
+  return input.kind === 'lash-solo' && validateLashScores(input.scoresByPlayer, game.players.map((player) => player.id));
 }
 
 export function trixRankingDelta(order: string[], players: GamePlayer[]): Record<string, number> {
@@ -38,10 +45,33 @@ export function partnerForPlayer(playerId: string, teams?: GameTeam[]): string |
   return team?.playerIds.find((id) => id !== playerId);
 }
 
-export function deriveFastRoundDelta(input: LashRoundInput | TrixRankingInput, players: GamePlayer[]): Record<string, number> {
-  return input.kind === 'lash' ? { ...input.scoresByPlayer } : trixRankingDelta(input.finishingOrder, players);
+export function teamForPlayer(playerId: string, teams?: GameTeam[]): GameTeam | undefined {
+  return teams?.find((team) => team.playerIds.includes(playerId));
+}
+
+export function createSoloLashInput(scoresByPlayer: Record<string, number>, oldMan: SoloLashRoundInput['oldMan']): SoloLashRoundInput {
+  return { kind: 'lash-solo', scoresByPlayer, oldMan };
+}
+
+export function createPartnershipLashInput(scoresByTeam: Record<string, number>, oldMan: PartnershipLashRoundInput['oldMan']): PartnershipLashRoundInput {
+  return { kind: 'lash-partnership', scoresByTeam, oldMan };
+}
+
+export function deriveFastRoundDelta(input: LashRoundInput | TrixRankingInput, game: GameSession): Record<string, number> {
+  if (input.kind === 'lash-partnership') return { ...input.scoresByTeam };
+  if (input.kind === 'lash-solo' || input.kind === 'lash') {
+    if (input.kind === 'lash' && game.trixMode === 'partnership' && game.teams) {
+      return Object.fromEntries(game.teams.map((team) => [team.id, team.playerIds.reduce((sum, id) => sum + (input.scoresByPlayer[id] ?? 0), 0)]));
+    }
+    return { ...input.scoresByPlayer };
+  }
+  const individual = trixRankingDelta(input.finishingOrder, game.players);
+  if (game.trixMode === 'partnership' && game.teams) {
+    return Object.fromEntries(game.teams.map((team) => [team.id, team.playerIds.reduce((sum, id) => sum + individual[id], 0)]));
+  }
+  return individual;
 }
 
 export function isFastGame(game: GameSession): boolean {
-  return game.gameType === 'trix-fast' && game.rulesSnapshot.kind === 'fast-trix-v3' || game.gameType === 'cc' && game.rulesSnapshot.kind === 'cc-v1';
+  return game.gameType === 'trix-fast' && (game.rulesSnapshot.kind === 'fast-trix-v3' || game.rulesSnapshot.kind === 'fast-trix-v4') || game.gameType === 'cc' && (game.rulesSnapshot.kind === 'cc-v1' || game.rulesSnapshot.kind === 'cc-v2');
 }

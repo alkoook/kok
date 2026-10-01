@@ -3,10 +3,9 @@ import { aggregatePartnershipScores, calculateTrixRound, validateKingdomBalance,
 import { DEFAULT_TRIX_RULES, FAST_CONTRACTS, SLOW_CONTRACTS } from '../games/trix/rules';
 import { createUnconfirmedTarneebRules } from '../games/tarneeb/rules';
 import { calculateTarneeb41Round, calculateTarneeb61Round, deriveTarneeb41Phase, determineTarneeb41Winner, determineTarneebWinner } from '../games/tarneeb/scoring';
-import type { AppSettings, BackupFile, GameRound, GameSession, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
+import type { AppSettings, BackupFile, ContentOverride, GameRound, GameSession, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
 import { isTrix, uid } from '../utils';
-import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashScores } from '../games/fast/scoring';
-import { factoryMessageRules } from '../games/fast/messages';
+import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashInput } from '../games/fast/scoring';
 import type { LashRoundInput, MessageRule, TrixRankingInput } from '../types';
 
 class KokDatabase extends Dexie {
@@ -16,6 +15,7 @@ class KokDatabase extends Dexie {
   settings!: EntityTable<AppSettings, 'id'>;
   presets!: EntityTable<RulePreset, 'id'>;
   messageRules!: EntityTable<MessageRule, 'id'>;
+  contentOverrides!: EntityTable<ContentOverride, 'id'>;
 
   constructor() {
     // الاسم الداخلي القديم محفوظ عمداً كي لا تضيع بيانات مستخدمي V1.
@@ -39,11 +39,31 @@ class KokDatabase extends Dexie {
       if (!player.updatedAt) player.updatedAt = fallback;
       delete player.gamesPlayed;
     }));
+    this.version(4).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event',
+      contentOverrides: 'id, factoryId, category, updatedAt'
+    }).upgrade(async (transaction) => {
+      const table = transaction.table<MessageRule>('messageRules');
+      const stored = await table.toArray();
+      for (const rule of stored) {
+        let nextId: string | undefined;
+        if (/^(fast-lash|cc-lash)-.+/.test(rule.id) && !/-\d+$/.test(rule.id)) nextId = `${rule.id}-1`;
+        else if (/^fast-trix-\d+-\d+$/.test(rule.id)) nextId = `${rule.id}-1`;
+        else if (rule.id === 'old-man-owner-normal') nextId = 'old-man-owner-normal-1';
+        else if (rule.id === 'old-man-owner-doubled') nextId = 'old-man-owner-doubled-1';
+        else if (/^tarneeb-break-private-\d+$/.test(rule.id)) {
+          nextId = `failure-private-${Number(rule.id.split('-').at(-1)) + 1}`;
+          rule.category = 'tarneeb-failure'; rule.event = 'tarneeb-failure';
+        }
+        if (nextId && nextId !== rule.id) { await table.delete(rule.id); await table.put({ ...rule, id: nextId, factoryId: nextId }); }
+      }
+    });
   }
 }
 
 export const db = new KokDatabase();
-export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, onboardingSeen: false };
+export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, roastIntensity: 4, onboardingSeen: false };
 
 const initialPresets = (): RulePreset[] => {
   const now = new Date().toISOString();
@@ -61,6 +81,7 @@ export async function initializeDatabase() {
     if (!settings) await db.settings.add(DEFAULT_SETTINGS);
     else if (settings.roundReactions === undefined) await db.settings.update('main', { roundReactions: true });
     if (settings && settings.preferredTarneebTarget === undefined) await db.settings.update('main', { preferredTarneebTarget: 61, contextualMessages: true });
+    if (settings && settings.roastIntensity === undefined) await db.settings.update('main', { roastIntensity: 4 });
     for (const preset of initialPresets()) if (!(await db.presets.get(preset.id))) await db.presets.add(preset);
     for (const id of ['trix-slow', 'trix-fast'] as const) {
       const preset = await db.presets.get(id);
@@ -68,8 +89,9 @@ export async function initializeDatabase() {
         await db.presets.update(id, { rules: { ...preset.rules, version: 2, doublingEnabled: true }, updatedAt: new Date().toISOString() });
       }
     }
-    for (const rule of factoryMessageRules()) if (!(await db.messageRules.get(rule.id))) await db.messageRules.add(rule);
   });
+  const legacyFastPartnerships = await db.games.filter((game) => game.trixMode === 'partnership' && (game.rulesSnapshot.kind === 'fast-trix-v3' || game.rulesSnapshot.kind === 'cc-v1')).toArray();
+  for (const game of legacyFastPartnerships) await recomputeGame(game.id);
 }
 
 export async function createGame(session: GameSession) {
@@ -86,12 +108,14 @@ export async function createGame(session: GameSession) {
 const sumScores = (base: Record<string, number>, delta: Record<string, number>, allowNegative = true) =>
   Object.fromEntries(Object.keys(base).map((id) => [id, allowNegative ? base[id] + (delta[id] ?? 0) : Math.max(0, base[id] + (delta[id] ?? 0))]));
 
-const scoreIdsForGame = (game: GameSession) => game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) || game.gameType === 'cc'
-  ? game.players.map((player) => player.id)
-  : game.teams?.map((team) => team.id) ?? game.players.map((player) => player.id);
+const scoreIdsForGame = (game: GameSession) => isFastGame(game) && game.trixMode === 'partnership' && game.teams
+  ? game.teams.map((team) => team.id)
+  : game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) || game.gameType === 'cc'
+    ? game.players.map((player) => player.id)
+    : game.teams?.map((team) => team.id) ?? game.players.map((player) => player.id);
 
 function validateCompletedTrixKingdoms(game: GameSession, rounds: GameRound[]) {
-  if (!isTrix(game.gameType)) return;
+  if (!isTrix(game.gameType) || isFastGame(game)) return;
   const contracts = game.gameType === 'trix-slow' ? SLOW_CONTRACTS : FAST_CONTRACTS;
   for (let kingdom = 0; kingdom < 4; kingdom += 1) {
     const kingdomRounds = rounds.filter((round) => round.kingdomIndex === kingdom && round.type !== 'manual-adjustment');
@@ -107,7 +131,7 @@ function completionState(game: GameSession, rounds: GameRound[], scores: Record<
     const played = rounds.filter((round) => round.type !== 'manual-adjustment');
     if (played.length < 8) return { status: 'active' as const, winnerIds: undefined };
     for (let kingdom = 0; kingdom < 4; kingdom += 1) if (!validateFastKingdom(played, kingdom, game.gameType as 'trix-fast' | 'cc')) throw new Error('نتيجة المملكة غير متوازنة');
-    const ranked = game.trixMode === 'partnership' && game.teams ? aggregatePartnershipScores(scores, game.teams) : scores;
+    const ranked = scores;
     const best = Math.max(...Object.values(ranked));
     return { status: 'completed' as const, winnerIds: Object.keys(ranked).filter((id) => ranked[id] === best) };
   }
@@ -146,7 +170,7 @@ async function recomputeGameInTransaction(gameId: string) {
     let input = round.input;
     let scoreDelta = round.scoreDelta;
     if (isFastGame(game) && (round.type === 'lash' || round.type === 'trix-ranking')) {
-      scoreDelta = deriveFastRoundDelta(round.input as LashRoundInput | TrixRankingInput, game.players);
+      scoreDelta = deriveFastRoundDelta(round.input as LashRoundInput | TrixRankingInput, game);
     } else if (game.rulesSnapshot.kind === 'tarneeb-41-v2' && round.type === 'tarneeb-41' && game.teams) {
       const entries = (round.input as Tarneeb41RoundInput).entries.map(({ playerId, bid, actualTricks }) => ({ playerId, bid, actualTricks }));
       const calculated = calculateTarneeb41Round(entries, deriveTarneeb41Phase(scores, game.teams), game.players, game.rulesSnapshot.rules);
@@ -185,11 +209,11 @@ export async function recomputeGame(gameId: string) {
 function normalizeNewRound(game: GameSession, round: Omit<GameRound, 'id' | 'index' | 'scoreAfter' | 'createdAt'>) {
   if (isFastGame(game) && round.type === 'lash') {
     const input = round.input as LashRoundInput;
-    if (!validateLashScores(input.scoresByPlayer, game.players)) throw new Error('يجب أن يكون مجموع اللطش -500');
-    return { ...round, scoreDelta: deriveFastRoundDelta(input, game.players) };
+    if (!validateLashInput(input, game)) throw new Error('يجب أن يكون مجموع اللطش -500 وبنفس نوع المباراة');
+    return { ...round, scoreDelta: deriveFastRoundDelta(input, game) };
   }
   if (isFastGame(game) && round.type === 'trix-ranking') {
-    return { ...round, scoreDelta: deriveFastRoundDelta(round.input as TrixRankingInput, game.players) };
+    return { ...round, scoreDelta: deriveFastRoundDelta(round.input as TrixRankingInput, game) };
   }
   if (game.rulesSnapshot.kind === 'tarneeb-61-v2' && round.type === 'tarneeb' && game.teams) {
     return { ...round, scoreDelta: calculateTarneeb61Round(round.input as TarneebRoundInput, [game.teams[0].id, game.teams[1].id], game.rulesSnapshot.rules).delta };
@@ -259,14 +283,14 @@ export async function deleteGame(gameId: string) {
 }
 
 export async function exportBackup(): Promise<BackupFile> {
-  const [games, rounds, players, presets, settings] = await Promise.all([db.games.toArray(), db.rounds.toArray(), db.players.toArray(), db.presets.toArray(), db.settings.toArray()]);
-  return { app: 'KOK', version: 2, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings } };
+  const [games, rounds, players, presets, settings, messageRules, contentOverrides] = await Promise.all([db.games.toArray(), db.rounds.toArray(), db.players.toArray(), db.presets.toArray(), db.settings.toArray(), db.messageRules.toArray(), db.contentOverrides.toArray()]);
+  return { app: 'KOK', version: 3, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings, messageRules, contentOverrides } };
 }
 
 export function isValidBackup(value: unknown): value is BackupFile {
   if (!value || typeof value !== 'object') return false;
   const backup = value as Partial<BackupFile>;
-  if (!((backup.app === 'Lammatna' || backup.app === 'KOK') && (backup.version === 1 || backup.version === 2) && backup.data &&
+  if (!((backup.app === 'Lammatna' || backup.app === 'KOK') && (backup.version === 1 || backup.version === 2 || backup.version === 3) && backup.data &&
     ['games', 'rounds', 'players', 'presets', 'settings'].every((key) => Array.isArray((backup.data as unknown as Record<string, unknown>)[key])))) return false;
   return backup.data.games.every((item) => typeof item?.id === 'string' && typeof item?.gameType === 'string' && Array.isArray(item?.players)) &&
     backup.data.rounds.every((item) => typeof item?.id === 'string' && typeof item?.gameId === 'string' && Number.isInteger(item?.index)) &&
@@ -275,8 +299,8 @@ export function isValidBackup(value: unknown): value is BackupFile {
 }
 
 export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace') {
-  await db.transaction('rw', db.games, db.rounds, db.players, db.presets, db.settings, async () => {
-    if (mode === 'replace') await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear()]);
+  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides], async () => {
+    if (mode === 'replace') await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear()]);
     await db.games.bulkPut(backup.data.games);
     await db.rounds.bulkPut(backup.data.rounds);
     if (mode === 'replace') await db.players.bulkPut(backup.data.players);
@@ -287,13 +311,15 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
     }
     await db.presets.bulkPut(backup.data.presets);
     await db.settings.bulkPut(backup.data.settings);
+    if (backup.data.messageRules?.length) await db.messageRules.bulkPut(backup.data.messageRules);
+    if (backup.data.contentOverrides?.length) await db.contentOverrides.bulkPut(backup.data.contentOverrides);
   });
   await initializeDatabase();
 }
 
 export async function clearAllData() {
-  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules], async () => {
-    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear()]);
+  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides], async () => {
+    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear()]);
   });
   await initializeDatabase();
 }

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { getContextualTarneeb61Reaction, getTarneeb61Reaction, pickRandomMessage } from './reactions';
+import { TARNEEB_FAILURE_MESSAGES, TARNEEB_PRIVATE_FAILURE_MESSAGES, TARNEEB_SUCCESS_MESSAGES, getContextualTarneeb61Reaction, getTarneeb61Reaction, pickRandomMessage } from './reactions';
 
 describe('تعليقات جولات طرنيب 61', () => {
+  it('يحمي كل IDs الأصلية ويضيف الخمس الجديدة بلا حذف', () => {
+    expect(TARNEEB_SUCCESS_MESSAGES.map((message) => message.id)).toEqual(Array.from({ length: 10 }, (_, index) => `success-${index + 1}`));
+    expect(TARNEEB_FAILURE_MESSAGES.map((message) => message.id)).toEqual(Array.from({ length: 16 }, (_, index) => `failure-${index + 1}`));
+    expect(TARNEEB_PRIVATE_FAILURE_MESSAGES.map((message) => message.id)).toEqual(Array.from({ length: 5 }, (_, index) => `failure-private-${index + 1}`));
+  });
   it('يعطي انكسار ضمان 7 الأولوية العليا', () => {
     const reaction = getTarneeb61Reaction({ bid: 7, actualTricks: 6, contractSucceeded: false });
     expect(reaction.variant).toBe('broken-seven');
