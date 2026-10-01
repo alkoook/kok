@@ -1,0 +1,56 @@
+import { Award, Crown, Download, Share2, Sparkles, Target, Trophy } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Button } from '../common/Button';
+import { useToast } from '../common/toast-context';
+import type { TarneebAward, TarneebPlayerSessionStats, TarneebRecord, TarneebSessionSummary } from '../../games/tarneeb/analytics';
+import { createTarneebShareCardPng, shareTarneebSummary } from '../../games/tarneeb/shareCard';
+import { formatDate, formatDuration } from '../../utils';
+
+export function TarneebSessionSummaryView({ summary, records = [], sessionNumber }: { summary: TarneebSessionSummary; records?: TarneebRecord[]; sessionNumber?: number }) {
+  const toast = useToast(); const [sharing, setSharing] = useState(false); const [shareBlob, setShareBlob] = useState<Blob>();
+  const winners = summary.teams.filter((team) => summary.winnerTeamIds.includes(team.id));
+  const winnerNames = winners.flatMap((team) => team.playerIds).map((id) => summary.game.players.find((player) => player.id === id)?.name).filter(Boolean).join(' + ');
+  const featuredAwards = [...summary.awards.filter((item) => item.category === 'glory').slice(0, 3), ...summary.awards.filter((item) => item.category === 'roast').slice(0, 3)];
+  useEffect(() => { let current = true; createShareCard(); async function createShareCard() { try { const blob = await createTarneebShareCardPng(summary); if (current) setShareBlob(blob); } catch { if (current) setShareBlob(undefined); } } return () => { current = false; }; }, [summary]);
+  const share = async () => { setSharing(true); try { const result = await shareTarneebSummary(summary, shareBlob); toast(result === 'shared' ? 'تم فتح المشاركة' : 'تم تنزيل صورة الملخص'); } catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return; toast(error instanceof Error ? error.message : 'تعذرت مشاركة الملخص'); } finally { setSharing(false); } };
+  return <div className="space-y-5">
+    <section className="summary-hero relative overflow-hidden rounded-[2rem] border border-amber-400/30 bg-gradient-to-br from-slate-900 via-slate-900 to-[#15101d] p-5 text-white shadow-2xl sm:p-7">
+      <div className="absolute -start-20 -top-28 size-64 rounded-full bg-amber-400/10 blur-3xl"/><div className="relative">
+        <div className="flex items-start justify-between gap-3"><div><span className="text-xs font-black text-amber-300">🃏 ملخص القعدة{sessionNumber ? ` #${sessionNumber}` : ''}</span><h1 className="mt-1 text-3xl font-black">{winnerNames ? 'القعدة إلها ملك' : 'قعدة للتاريخ'}</h1></div><div className="grid size-12 place-items-center rounded-2xl border border-amber-300/30 bg-amber-300/10 text-amber-300"><Crown/></div></div>
+        <div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-2xl border border-white/10 bg-white/5 p-4"><span className="block text-xs text-slate-400">👑 الفائزون</span><strong className="mt-1 block truncate text-lg">{winnerNames || 'تعادل'}</strong></div><div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-left" dir="ltr"><span className="block text-xs text-slate-400">النتيجة النهائية</span><strong className="mt-1 block text-3xl tabular-nums text-amber-300">{summary.teams.map((team) => summary.game.scores[team.id] ?? 0).join(' — ')}</strong></div></div>
+        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300"><span>{formatDate(summary.game.createdAt)}</span>{summary.game.finishedAt && <span>{formatDuration(summary.game.createdAt, summary.game.finishedAt)}</span>}<span>{summary.roundCount} جولة</span></div>
+      </div>
+    </section>
+
+    <section className="surface p-5"><div className="mb-3 flex items-center gap-2"><Sparkles className="text-amber-500" size={20}/><h2 className="text-xl font-black">حكاية القعدة</h2></div><p className="text-[15px] font-semibold leading-8">{summary.story}</p></section>
+
+    {records.length > 0 && <section className="rounded-3xl border border-amber-400/35 bg-gradient-to-br from-amber-400/15 to-violet-500/5 p-5"><div className="flex items-center gap-2"><Award className="text-amber-500"/><h2 className="text-xl font-black">🏆 رقم قياسي جديد</h2></div><div className="mt-3 space-y-2">{records.map((record) => <div key={record.id} className="rounded-2xl bg-[var(--surface)] p-3"><strong>{record.title}</strong><span className="muted me-2">— {record.value}</span></div>)}</div></section>}
+
+    {featuredAwards.length > 0 && <section><div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-black">أبطال وفضايح القعدة</h2><span className="eyebrow">{summary.awards.length} ألقاب</span></div><div className="summary-awards scrollbar-hidden -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:px-0">{featuredAwards.map((item, index) => <AwardCard key={item.id} award={item} summary={summary} index={index}/>)}</div>{summary.awards.length > featuredAwards.length && <details className="surface mt-3 p-4"><summary className="cursor-pointer font-black">عرض كل الألقاب المستحقة</summary><div className="mt-3 grid gap-3 sm:grid-cols-2">{summary.awards.map((item, index) => <AwardCard key={item.id} award={item} summary={summary} index={index}/>)}</div></details>}</section>}
+
+    <section><h2 className="mb-3 text-xl font-black">أداء اللاعبين</h2><div className="grid gap-3 sm:grid-cols-2">{summary.playerStats.map((stat) => <PlayerStatsCard key={stat.playerId} stat={stat} awards={summary.awards.filter((item) => item.playerIds?.includes(stat.playerId))}/>)}</div></section>
+
+    {summary.scoreTimeline.length > 1 && <section className="surface p-5"><div className="mb-4 flex items-center gap-2"><Target className="text-mint-600" size={20}/><h2 className="text-xl font-black">تطور النتيجة</h2></div><ScoreTimeline summary={summary}/>{summary.comeback && <div className="mt-3 rounded-2xl bg-orange-500/10 p-3 text-sm font-black text-orange-700 dark:text-orange-300">🔥 {summary.teams.find((team) => team.id === summary.comeback?.teamId)?.name} رجع من فارق {summary.comeback.deficit} وفاز</div>}</section>}
+
+    <div className="grid gap-3 sm:grid-cols-2">{summary.featuredMoment && <MomentCard title="لحظة القعدة" icon="🔥" text={summary.featuredMoment.text} glory/>}{summary.featuredRoast && <MomentCard title="فضيحة القعدة" icon="😂" text={summary.featuredRoast.text}/>}</div>
+    <section className="rounded-3xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-5 text-center"><Trophy className="mx-auto mb-2 text-amber-500"/><p className="font-black leading-7">{summary.verdict}</p></section>
+    <Button className="w-full" size="lg" icon={sharing || !shareBlob ? <Download size={19}/> : <Share2 size={19}/>} disabled={sharing || !shareBlob} onClick={share}>{sharing ? 'جارٍ فتح المشاركة…' : shareBlob ? 'شارك ملخص القعدة' : 'جارٍ تجهيز بطاقة المشاركة…'}</Button>
+  </div>;
+}
+
+function AwardCard({ award, summary, index }: { award: TarneebAward; summary: TarneebSessionSummary; index: number }) {
+  const names = award.playerIds?.map((id) => summary.game.players.find((player) => player.id === id)?.name).filter(Boolean).join(' و') ?? summary.teams.find((team) => team.id === award.teamId)?.name;
+  return <article style={{ animationDelay: `${Math.min(index, 5) * 55}ms` }} className={`summary-award-card w-[17rem] shrink-0 snap-center rounded-3xl border p-4 sm:w-auto ${award.category === 'glory' ? 'border-amber-400/25 bg-gradient-to-br from-amber-400/10 to-emerald-500/5' : 'border-rose-400/25 bg-gradient-to-br from-rose-500/10 to-orange-500/5'}`}><span className="text-2xl">{award.emoji}</span><h3 className="mt-2 font-black">{award.title}</h3><strong className={award.category === 'glory' ? 'text-amber-700 dark:text-amber-300' : 'text-rose-700 dark:text-rose-300'}>{names}</strong><p className="muted mt-1 text-xs">{award.reason}</p></article>;
+}
+
+function PlayerStatsCard({ stat, awards }: { stat: TarneebPlayerSessionStats; awards: TarneebAward[] }) {
+  return <article className="surface p-4"><div className="flex items-start justify-between gap-2"><div><h3 className="text-lg font-black">{stat.playerName}</h3><span className="muted text-xs">{stat.totalContracts ? `${stat.totalContracts} ضمانات` : 'لم يضمن'}</span></div>{awards[0] && <span className="rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-black">{awards[0].emoji} {awards[0].title}</span>}</div><div className="mt-4 grid grid-cols-3 gap-2 text-center"><Stat value={stat.successfulContracts} label="نجح" good/><Stat value={stat.failedContracts} label="انكسر"/><Stat value={stat.successRate === undefined ? '—' : `${Math.round(stat.successRate)}%`} label="نسبة النجاح" good/></div><div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="rounded-xl bg-slate-100 px-2.5 py-1 dark:bg-white/5">13: ×{stat.kaboots}</span><span className="rounded-xl bg-slate-100 px-2.5 py-1 dark:bg-white/5">Broken 7: ×{stat.brokenSevens}</span><span className="rounded-xl bg-slate-100 px-2.5 py-1 dark:bg-white/5">أطول نجاح: {stat.longestSuccessStreak}</span>{stat.highestSuccessfulBid && <span className="rounded-xl bg-slate-100 px-2.5 py-1 dark:bg-white/5">أعلى ضمان: {stat.highestSuccessfulBid}</span>}</div></article>;
+}
+function Stat({ value, label, good }: { value: string | number; label: string; good?: boolean }) { return <div className="rounded-2xl bg-slate-100 p-2 dark:bg-white/5"><strong className={`block text-lg ${good ? 'text-mint-600' : ''}`}>{value}</strong><span className="muted text-[10px]">{label}</span></div>; }
+function MomentCard({ title, icon, text, glory }: { title: string; icon: string; text: string; glory?: boolean }) { return <section className={`rounded-3xl border p-5 ${glory ? 'border-amber-400/25 bg-amber-400/10' : 'border-rose-400/25 bg-rose-500/10'}`}><span className="text-2xl">{icon}</span><h2 className="mt-2 font-black">{title}</h2><p className="mt-1 text-sm leading-7">{text}</p></section>; }
+
+function ScoreTimeline({ summary }: { summary: TarneebSessionSummary }) {
+  const width = 600; const height = 190; const pad = 24; const all = summary.scoreTimeline.flatMap((point) => summary.teams.map((team) => point.scores[team.id] ?? 0)); const min = Math.min(0, ...all); const max = Math.max(1, ...all); const range = max - min;
+  const path = (teamId: string) => summary.scoreTimeline.map((point, index) => `${pad + index / Math.max(1, summary.scoreTimeline.length - 1) * (width - pad * 2)},${height - pad - ((point.scores[teamId] ?? 0) - min) / range * (height - pad * 2)}`).join(' ');
+  return <div className="overflow-hidden rounded-2xl bg-slate-100 p-2 dark:bg-white/5"><svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label="مخطط تطور نتيجة الفريقين"><line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="currentColor" opacity=".12"/><polyline points={path(summary.teams[0].id)} fill="none" stroke="#14b8a6" strokeWidth="7" strokeLinejoin="round" strokeLinecap="round"/><polyline points={path(summary.teams[1].id)} fill="none" stroke="#f59e0b" strokeWidth="7" strokeLinejoin="round" strokeLinecap="round"/></svg><div className="flex justify-center gap-5 text-xs font-bold"><span className="text-teal-600">● {summary.teams[0].name}</span><span className="text-amber-600">● {summary.teams[1].name}</span></div></div>;
+}
