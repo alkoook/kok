@@ -12,11 +12,13 @@ import { TarneebRoundEntry } from '../../components/tarneeb/TarneebRoundEntry';
 import { Tarneeb41RoundEntry } from '../../components/tarneeb/Tarneeb41RoundEntry';
 import { Tarneeb61Reaction } from '../../components/tarneeb/Tarneeb61Reaction';
 import { TrixRoundEntry } from '../../components/trix/TrixRoundEntry';
+import { FastGamePanel } from '../../components/fast/FastGamePanel';
 import { addRound, createGame, db, replaceRound, undoLastRound } from '../../db/database';
 import { FAST_CONTRACTS, SLOW_CONTRACTS, CONTRACT_LABELS, TRIX_QUEENS } from '../../games/trix/rules';
 import { aggregatePartnershipScores } from '../../games/trix/scoring';
 import { buildTarneeb61Attempts } from '../../games/tarneeb/analytics';
 import { getContextualTarneeb61Reaction, type Tarneeb61Reaction as Tarneeb61ReactionData } from '../../games/tarneeb/reactions';
+import { pickMessage } from '../../games/fast/messages';
 import type { TarneebRoundResult } from '../../games/tarneeb/scoring';
 import { useGame } from '../../hooks/useGame';
 import type { GameRound, GameSession, ManualAdjustmentInput, Tarneeb41RoundInput, TarneebRoundInput, TrixContract, TrixRoundInput, TrixRules } from '../../types';
@@ -41,8 +43,10 @@ export function GamePage() {
   useEffect(() => {
     if (!settings?.keepAwake || !('wakeLock' in navigator)) return;
     let lock: { release: () => Promise<void> } | undefined;
-    (navigator as Navigator & { wakeLock: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock.request('screen').then((value) => { lock = value; }).catch(() => undefined);
-    return () => { lock?.release().catch(() => undefined); };
+    const acquire = () => { if (document.visibilityState === 'visible') (navigator as Navigator & { wakeLock: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock.request('screen').then((value) => { lock = value; }).catch(() => undefined); };
+    const visible = () => { if (document.visibilityState === 'visible') acquire(); };
+    acquire(); document.addEventListener('visibilitychange', visible);
+    return () => { document.removeEventListener('visibilitychange', visible); lock?.release().catch(() => undefined); };
   }, [settings?.keepAwake]);
 
   if (game === undefined) return <main className="page"><div className="surface h-56 animate-pulse"/></main>;
@@ -65,7 +69,11 @@ export function GamePage() {
         lastReactionRoundId.current = savedRound.id;
         const previousId = lastReactionByPlayer.current.get(input.bidderId);
         const attempts = buildTarneeb61Attempts(game, [...rounds, savedRound]);
-        const nextReaction = getContextualTarneeb61Reaction({ playerId: input.bidderId, bid: input.bid, actualTricks, contractSucceeded: result.contractSucceeded }, attempts, previousId);
+        let nextReaction = getContextualTarneeb61Reaction({ playerId: input.bidderId, bid: input.bid, actualTricks, contractSucceeded: result.contractSucceeded }, attempts, previousId);
+        if (!result.contractSucceeded) {
+          const customBreak = pickMessage((await db.messageRules.where('category').equals('tarneeb-break').toArray()).filter((rule) => rule.enabled), previousId);
+          if (customBreak) nextReaction = { id: customBreak.id, message: customBreak.template, variant: input.bid === 7 ? 'broken-seven' : 'failure', durationMs: customBreak.durationMs };
+        }
         lastReactionByPlayer.current.set(input.bidderId, nextReaction.id);
         setReaction({ ...nextReaction, occurrence: savedRound.index });
       } else toast('تم تسجيل الجولة');
@@ -77,9 +85,9 @@ export function GamePage() {
   };
 
   return <main className="scrollbar-hidden mx-auto min-h-dvh w-full max-w-3xl pb-[calc(6rem+env(safe-area-inset-bottom))]">
-    <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-[color:var(--bg)]/90 px-4 py-3 backdrop-blur-xl dark:border-white/10"><div className="flex items-center justify-between"><button className="grid size-11 place-items-center rounded-2xl" onClick={() => navigate('/')} aria-label="الرئيسية"><ArrowRight size={21}/></button><div className="text-center"><h1 className="font-black">{GAME_LABELS[game.gameType]}</h1><span className="flex items-center justify-center gap-1 text-xs text-mint-600"><Check size={13}/> محفوظ</span></div><button className="grid size-11 place-items-center rounded-2xl" onClick={() => setMenuOpen(true)} aria-label="قائمة المباراة"><MoreVertical size={21}/></button></div></header>
+    <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-[color:var(--bg)]/90 px-4 py-3 backdrop-blur-xl dark:border-white/10"><div className="flex items-center justify-between"><button className="grid size-11 place-items-center rounded-2xl" onClick={() => navigate('/')} aria-label="الرئيسية"><ArrowRight size={21}/></button><div className="text-center"><h1 className="font-black">{game.rulesSnapshot.kind === 'tarneeb-61-v2' ? `طرنيب — الهدف ${game.rulesSnapshot.rules.targetScore}` : GAME_LABELS[game.gameType]}</h1><span className="flex items-center justify-center gap-1 text-xs text-mint-600"><Check size={13}/> محفوظ</span></div><button className="grid size-11 place-items-center rounded-2xl" onClick={() => setMenuOpen(true)} aria-label="قائمة المباراة"><MoreVertical size={21}/></button></div></header>
     {reaction && game.gameType === 'tarneeb-61' && <Tarneeb61Reaction key={reaction.occurrence} reaction={reaction} onDismiss={() => setReaction(undefined)}/>}
-    {game.status === 'completed' ? <Winner game={game} rounds={rounds} onUndo={() => setUndoOpen(true)} onHistory={() => setHistoryOpen(true)}/> : isTrix(game.gameType)
+    {(game.rulesSnapshot.kind === 'fast-trix-v3' || game.rulesSnapshot.kind === 'cc-v1') ? <FastGamePanel game={game} rounds={rounds}/> : game.status === 'completed' ? <Winner game={game} rounds={rounds} onUndo={() => setUndoOpen(true)} onHistory={() => setHistoryOpen(true)}/> : isTrix(game.gameType)
       ? <TrixActive game={game} rounds={rounds} selectedContract={selectedContract} setSelectedContract={setSelectedContract} onSave={saveTrix}/>
       : game.gameType === 'tarneeb-41' && game.rulesSnapshot.kind === 'tarneeb-41-v2' ? <Tarneeb41Active game={game} rounds={rounds} onSave={saveTarneeb41}/> : <TarneebActive game={game} rounds={rounds} onSave={saveTarneeb}/>} 
     {game.status === 'active' && <div className="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-3xl border-t border-slate-200 bg-[color:var(--surface)]/95 px-4 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur dark:border-white/10"><div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={!lastRound} icon={<Undo2 size={18}/>} onClick={() => setUndoOpen(true)}>تراجع</Button><Button variant="secondary" icon={<History size={18}/>} onClick={() => setHistoryOpen(true)}>سجل الجولات</Button></div></div>}
@@ -131,7 +139,7 @@ function Winner({ game, rounds, onUndo, onHistory }: { game: GameSession; rounds
 export function ReplayButton({ game }: { game: GameSession }) {
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
-  return <Button disabled={saving} icon={<RotateCcw size={18}/>} onClick={async () => { setSaving(true); const now = new Date().toISOString(); const players = game.players.map((player) => ({ ...player })); const idMap = Object.fromEntries(game.players.map((player, index) => [player.id, players[index].id])); const teams = game.teams?.map((team) => ({ ...team, id: uid(), playerIds: [idMap[team.playerIds[0]], idMap[team.playerIds[1]]] as [string, string] })); const ids = game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) ? players.map((player) => player.id) : teams?.map((team) => team.id) ?? players.map((player) => player.id); const next: GameSession = { ...game, id: uid(), players, teams, status: 'active', createdAt: now, updatedAt: now, finishedAt: undefined, currentRound: 0, scores: Object.fromEntries(ids.map((id) => [id, 0])), winnerIds: undefined, firstKingdomOwnerId: game.firstKingdomOwnerId ? idMap[game.firstKingdomOwnerId] : undefined }; await createGame(next); navigate(`/game/${next.id}`); }}>مباراة جديدة بنفس اللاعبين</Button>;
+  return <Button disabled={saving} icon={<RotateCcw size={18}/>} onClick={async () => { setSaving(true); const now = new Date().toISOString(); const players = game.players.map((player) => ({ ...player })); const idMap = Object.fromEntries(game.players.map((player, index) => [player.id, players[index].id])); const teams = game.teams?.map((team) => ({ ...team, id: uid(), playerIds: [idMap[team.playerIds[0]], idMap[team.playerIds[1]]] as [string, string] })); const ids = game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) || game.gameType === 'cc' ? players.map((player) => player.id) : teams?.map((team) => team.id) ?? players.map((player) => player.id); const next: GameSession = { ...game, id: uid(), players, teams, status: 'active', createdAt: now, updatedAt: now, finishedAt: undefined, currentRound: 0, scores: Object.fromEntries(ids.map((id) => [id, 0])), winnerIds: undefined, firstKingdomOwnerId: game.firstKingdomOwnerId ? idMap[game.firstKingdomOwnerId] : undefined }; await createGame(next); navigate(`/game/${next.id}`); }}>مباراة جديدة بنفس اللاعبين</Button>;
 }
 
 function RoundTimeline({ game, rounds, onEdit }: { game: GameSession; rounds: GameRound[]; onEdit: (round: GameRound) => void }) {
@@ -145,7 +153,7 @@ function ManualAdjustment({ game, onSave }: { game: GameSession; onSave: (input:
   const [amount, setAmount] = useState(0);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
-  return <div className="space-y-4"><p className="muted">يُسجّل التصحيح كحدث مستقل ولا يغيّر المجموع مباشرة.</p><div className="grid grid-cols-2 gap-2">{targets.map((target) => <button key={target.id} onClick={() => setTargetId(target.id)} className={`min-h-12 rounded-2xl border font-bold ${targetId === target.id ? 'border-mint-500 bg-mint-500/10' : 'border-slate-200 dark:border-white/10'}`}>{target.name}</button>)}</div><label><span className="label">النقاط (+ أو -)</span><input className="field" type="number" value={amount} onChange={(event) => setAmount(Number(event.target.value))}/></label><label><span className="label">السبب (اختياري)</span><input className="field" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="مثلاً: قاعدة محلية"/></label><Button className="w-full" disabled={!Number.isInteger(amount) || amount === 0 || saving} onClick={async () => { setSaving(true); const team = game.teams?.find((item) => item.id === targetId); await onSave({ targetId, amount, reason }, { [team?.playerIds[0] ?? targetId]: amount }); }}>تسجيل التصحيح</Button></div>;
+  return <div className="space-y-4"><p className="muted">يُسجّل التصحيح كحدث مستقل وتُعاد منه حسابات المباراة.</p><div className="grid grid-cols-2 gap-2">{targets.map((target) => <button key={target.id} onClick={() => setTargetId(target.id)} className={`min-h-12 rounded-2xl border font-bold ${targetId === target.id ? 'border-mint-500 bg-mint-500/10' : 'border-slate-200 dark:border-white/10'}`}>{target.name}</button>)}</div><label><span className="label">النقاط (+ أو -)</span><input className="field" type="number" value={amount} onChange={(event) => setAmount(Number(event.target.value))}/></label><label><span className="label">السبب (اختياري)</span><input className="field" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="مثلاً: قاعدة محلية"/></label><Button className="w-full" disabled={!Number.isInteger(amount) || amount === 0 || saving} onClick={async () => { setSaving(true); const team = game.teams?.find((item) => item.id === targetId); const scoreKey = team && (isTrix(game.gameType) || game.gameType === 'cc') ? team.playerIds[0] : targetId; await onSave({ targetId, amount, reason }, { [scoreKey]: amount }); }}>تسجيل التصحيح</Button></div>;
 }
 
 function labelForId(game: GameSession, id: string) { return game.teams?.find((team) => team.id === id)?.name ?? game.players.find((player) => player.id === id)?.name ?? ''; }

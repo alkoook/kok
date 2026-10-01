@@ -5,6 +5,9 @@ import { createUnconfirmedTarneebRules } from '../games/tarneeb/rules';
 import { calculateTarneeb41Round, calculateTarneeb61Round, deriveTarneeb41Phase, determineTarneeb41Winner, determineTarneebWinner } from '../games/tarneeb/scoring';
 import type { AppSettings, BackupFile, GameRound, GameSession, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
 import { isTrix, uid } from '../utils';
+import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashScores } from '../games/fast/scoring';
+import { factoryMessageRules } from '../games/fast/messages';
+import type { LashRoundInput, MessageRule, TrixRankingInput } from '../types';
 
 class KokDatabase extends Dexie {
   games!: EntityTable<GameSession, 'id'>;
@@ -12,6 +15,7 @@ class KokDatabase extends Dexie {
   players!: EntityTable<PlayerProfile, 'id'>;
   settings!: EntityTable<AppSettings, 'id'>;
   presets!: EntityTable<RulePreset, 'id'>;
+  messageRules!: EntityTable<MessageRule, 'id'>;
 
   constructor() {
     // الاسم الداخلي القديم محفوظ عمداً كي لا تضيع بيانات مستخدمي V1.
@@ -26,11 +30,20 @@ class KokDatabase extends Dexie {
     }).upgrade((transaction) => transaction.table('games').toCollection().modify((game: GameSession) => {
       if (!game.rulesVersion) game.rulesVersion = 1;
     }));
+    this.version(3).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event'
+    }).upgrade((transaction) => transaction.table('players').toCollection().modify((player: PlayerProfile) => {
+      const fallback = player.lastPlayedAt ?? new Date().toISOString();
+      if (!player.createdAt) player.createdAt = fallback;
+      if (!player.updatedAt) player.updatedAt = fallback;
+      delete player.gamesPlayed;
+    }));
   }
 }
 
 export const db = new KokDatabase();
-export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, onboardingSeen: false };
+export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, onboardingSeen: false };
 
 const initialPresets = (): RulePreset[] => {
   const now = new Date().toISOString();
@@ -43,10 +56,11 @@ const initialPresets = (): RulePreset[] => {
 };
 
 export async function initializeDatabase() {
-  await db.transaction('rw', db.settings, db.presets, async () => {
+  await db.transaction('rw', db.settings, db.presets, db.messageRules, async () => {
     const settings = await db.settings.get('main');
     if (!settings) await db.settings.add(DEFAULT_SETTINGS);
     else if (settings.roundReactions === undefined) await db.settings.update('main', { roundReactions: true });
+    if (settings && settings.preferredTarneebTarget === undefined) await db.settings.update('main', { preferredTarneebTarget: 61, contextualMessages: true });
     for (const preset of initialPresets()) if (!(await db.presets.get(preset.id))) await db.presets.add(preset);
     for (const id of ['trix-slow', 'trix-fast'] as const) {
       const preset = await db.presets.get(id);
@@ -54,16 +68,16 @@ export async function initializeDatabase() {
         await db.presets.update(id, { rules: { ...preset.rules, version: 2, doublingEnabled: true }, updatedAt: new Date().toISOString() });
       }
     }
+    for (const rule of factoryMessageRules()) if (!(await db.messageRules.get(rule.id))) await db.messageRules.add(rule);
   });
 }
 
 export async function createGame(session: GameSession) {
   await db.transaction('rw', db.games, db.players, db.settings, async () => {
     await db.games.add(session);
-    for (const player of session.players) {
-      const existing = await db.players.where('name').equalsIgnoreCase(player.name).first();
-      if (existing) await db.players.update(existing.id, { gamesPlayed: existing.gamesPlayed + 1, lastPlayedAt: session.createdAt });
-      else await db.players.add({ id: player.id, name: player.name, gamesPlayed: 1, lastPlayedAt: session.createdAt });
+    for (const player of session.players.filter((item) => item.profileId)) {
+      const existing = await db.players.get(player.profileId!);
+      if (existing) await db.players.update(existing.id, { lastPlayedAt: session.createdAt, updatedAt: existing.updatedAt });
     }
     await db.settings.update('main', { lastActiveGameId: session.id });
   });
@@ -72,7 +86,7 @@ export async function createGame(session: GameSession) {
 const sumScores = (base: Record<string, number>, delta: Record<string, number>, allowNegative = true) =>
   Object.fromEntries(Object.keys(base).map((id) => [id, allowNegative ? base[id] + (delta[id] ?? 0) : Math.max(0, base[id] + (delta[id] ?? 0))]));
 
-const scoreIdsForGame = (game: GameSession) => game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType)
+const scoreIdsForGame = (game: GameSession) => game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) || game.gameType === 'cc'
   ? game.players.map((player) => player.id)
   : game.teams?.map((team) => team.id) ?? game.players.map((player) => player.id);
 
@@ -89,6 +103,14 @@ function validateCompletedTrixKingdoms(game: GameSession, rounds: GameRound[]) {
 }
 
 function completionState(game: GameSession, rounds: GameRound[], scores: Record<string, number>) {
+  if (isFastGame(game)) {
+    const played = rounds.filter((round) => round.type !== 'manual-adjustment');
+    if (played.length < 8) return { status: 'active' as const, winnerIds: undefined };
+    for (let kingdom = 0; kingdom < 4; kingdom += 1) if (!validateFastKingdom(played, kingdom, game.gameType as 'trix-fast' | 'cc')) throw new Error('نتيجة المملكة غير متوازنة');
+    const ranked = game.trixMode === 'partnership' && game.teams ? aggregatePartnershipScores(scores, game.teams) : scores;
+    const best = Math.max(...Object.values(ranked));
+    return { status: 'completed' as const, winnerIds: Object.keys(ranked).filter((id) => ranked[id] === best) };
+  }
   if (isTrix(game.gameType)) {
     const total = game.gameType === 'trix-slow' ? 20 : 8;
     if (rounds.filter((round) => round.type !== 'manual-adjustment').length < total) return { status: 'active' as const, winnerIds: undefined };
@@ -97,7 +119,8 @@ function completionState(game: GameSession, rounds: GameRound[], scores: Record<
     return { status: 'completed' as const, winnerIds: Object.keys(rankedScores).filter((id) => rankedScores[id] === best) };
   }
   if (game.rulesSnapshot.kind === 'tarneeb-61-v2') {
-    const reached = Object.entries(scores).filter(([, score]) => score >= 61);
+    const targetScore = game.rulesSnapshot.rules.targetScore;
+    const reached = Object.entries(scores).filter(([, score]) => score >= targetScore);
     if (!reached.length) return { status: 'active' as const, winnerIds: undefined };
     const best = Math.max(...reached.map(([, score]) => score));
     const winners = reached.filter(([, score]) => score === best).map(([id]) => id);
@@ -122,7 +145,9 @@ async function recomputeGameInTransaction(gameId: string) {
   for (const round of rounds) {
     let input = round.input;
     let scoreDelta = round.scoreDelta;
-    if (game.rulesSnapshot.kind === 'tarneeb-41-v2' && round.type === 'tarneeb-41' && game.teams) {
+    if (isFastGame(game) && (round.type === 'lash' || round.type === 'trix-ranking')) {
+      scoreDelta = deriveFastRoundDelta(round.input as LashRoundInput | TrixRankingInput, game.players);
+    } else if (game.rulesSnapshot.kind === 'tarneeb-41-v2' && round.type === 'tarneeb-41' && game.teams) {
       const entries = (round.input as Tarneeb41RoundInput).entries.map(({ playerId, bid, actualTricks }) => ({ playerId, bid, actualTricks }));
       const calculated = calculateTarneeb41Round(entries, deriveTarneeb41Phase(scores, game.teams), game.players, game.rulesSnapshot.rules);
       input = calculated.input;
@@ -158,6 +183,14 @@ export async function recomputeGame(gameId: string) {
 }
 
 function normalizeNewRound(game: GameSession, round: Omit<GameRound, 'id' | 'index' | 'scoreAfter' | 'createdAt'>) {
+  if (isFastGame(game) && round.type === 'lash') {
+    const input = round.input as LashRoundInput;
+    if (!validateLashScores(input.scoresByPlayer, game.players)) throw new Error('يجب أن يكون مجموع اللطش -500');
+    return { ...round, scoreDelta: deriveFastRoundDelta(input, game.players) };
+  }
+  if (isFastGame(game) && round.type === 'trix-ranking') {
+    return { ...round, scoreDelta: deriveFastRoundDelta(round.input as TrixRankingInput, game.players) };
+  }
   if (game.rulesSnapshot.kind === 'tarneeb-61-v2' && round.type === 'tarneeb' && game.teams) {
     return { ...round, scoreDelta: calculateTarneeb61Round(round.input as TarneebRoundInput, [game.teams[0].id, game.teams[1].id], game.rulesSnapshot.rules).delta };
   }
@@ -180,6 +213,10 @@ export async function addRound(round: Omit<GameRound, 'id' | 'index' | 'scoreAft
     if (!game || game.status !== 'active') throw new Error('لا يمكن إضافة جولة لهذه المباراة');
     const normalized = normalizeNewRound(game, round);
     const existingRounds = await db.rounds.where('gameId').equals(round.gameId).sortBy('index');
+    if (isFastGame(game) && round.type !== 'manual-adjustment') {
+      const sameKingdom = existingRounds.filter((item) => item.kingdomIndex === round.kingdomIndex && item.type !== 'manual-adjustment');
+      if (sameKingdom.length >= 2 || game.gameType === 'trix-fast' && sameKingdom.some((item) => item.type === round.type)) throw new Error('هذه الجولة مسجلة مسبقًا');
+    }
     const last = existingRounds.at(-1);
     const allowNegative = game.rulesSnapshot.kind === 'tarneeb' ? game.rulesSnapshot.rules.allowNegativeScore : true;
     const scoreAfter = sumScores(game.scores, normalized.scoreDelta, allowNegative);
@@ -245,7 +282,7 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
     if (mode === 'replace') await db.players.bulkPut(backup.data.players);
     else for (const player of backup.data.players) {
       const existing = await db.players.where('name').equalsIgnoreCase(player.name).first();
-      if (existing) await db.players.update(existing.id, { gamesPlayed: Math.max(existing.gamesPlayed, player.gamesPlayed), lastPlayedAt: existing.lastPlayedAt > player.lastPlayedAt ? existing.lastPlayedAt : player.lastPlayedAt });
+      if (existing) await db.players.update(existing.id, { lastPlayedAt: (existing.lastPlayedAt ?? '') > (player.lastPlayedAt ?? '') ? existing.lastPlayedAt : player.lastPlayedAt });
       else await db.players.put(player);
     }
     await db.presets.bulkPut(backup.data.presets);
@@ -255,8 +292,8 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
 }
 
 export async function clearAllData() {
-  await db.transaction('rw', db.games, db.rounds, db.players, db.presets, db.settings, async () => {
-    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear()]);
+  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules], async () => {
+    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear()]);
   });
   await initializeDatabase();
 }

@@ -5,6 +5,7 @@ export const uid = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${M
 export const GAME_LABELS: Record<GameType, string> = {
   'trix-slow': 'تركس بطيئة',
   'trix-fast': 'تركس سريعة',
+  cc: 'CC',
   'tarneeb-61': 'طرنيب 61',
   'tarneeb-41': 'طرنيب سوري 41'
 };

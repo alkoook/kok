@@ -1,10 +1,10 @@
-export type GameType = 'trix-slow' | 'trix-fast' | 'tarneeb-61' | 'tarneeb-41';
+export type GameType = 'trix-slow' | 'trix-fast' | 'cc' | 'tarneeb-61' | 'tarneeb-41';
 export type GameStatus = 'active' | 'completed' | 'cancelled';
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type TrixMode = 'individual' | 'partnership';
+export type TrixMode = 'individual' | 'solo' | 'partnership';
 export type TrixSuit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
 
-export type GamePlayer = { id: string; name: string; seat: number };
+export type GamePlayer = { id: string; name: string; seat: number; profileId?: string };
 export type GameTeam = { id: string; name: string; playerIds: [string, string] };
 
 export type TrixContract = 'king' | 'queens' | 'diamonds' | 'tricks' | 'trix' | 'complex';
@@ -44,7 +44,7 @@ export type TarneebScoringRules = {
 
 export type Tarneeb61RulesV2 = {
   version: 2;
-  targetScore: 61;
+  targetScore: number;
   minimumBid: 7;
   maximumBid: 13;
 };
@@ -62,7 +62,9 @@ export type RulesSnapshot =
   | { kind: 'trix'; version?: 1 | 2; rules: TrixRules }
   | { kind: 'tarneeb'; version?: 1; rules: TarneebScoringRules }
   | { kind: 'tarneeb-61-v2'; version: 2; rules: Tarneeb61RulesV2 }
-  | { kind: 'tarneeb-41-v2'; version: 2; rules: Tarneeb41RulesV2 };
+  | { kind: 'tarneeb-41-v2'; version: 2; rules: Tarneeb41RulesV2 }
+  | { kind: 'fast-trix-v3'; version: 3 }
+  | { kind: 'cc-v1'; version: 1 };
 
 export type GameSession = {
   id: string;
@@ -76,7 +78,7 @@ export type GameSession = {
   currentRound: number;
   scores: Record<string, number>;
   rulesSnapshot: RulesSnapshot;
-  rulesVersion?: 1 | 2;
+  rulesVersion?: 1 | 2 | 3;
   trixMode?: TrixMode;
   firstKingdomOwnerId?: string;
   winnerIds?: string[];
@@ -130,21 +132,29 @@ export type Tarneeb41RoundInput = {
 
 export type ManualAdjustmentInput = { targetId: string; amount: number; reason?: string };
 
+export type OldManMetadata = { eaterPlayerId: string; doubled: boolean };
+export type LashRoundInput = {
+  kind: 'lash';
+  scoresByPlayer: Record<string, number>;
+  oldMan: OldManMetadata;
+};
+export type TrixRankingInput = { kind: 'trix-ranking'; finishingOrder: [string, string, string, string] };
+
 export type GameRound = {
   id: string;
   gameId: string;
   index: number;
-  type: TrixContract | 'tarneeb' | 'tarneeb-41' | 'manual-adjustment';
+  type: TrixContract | 'lash' | 'trix-ranking' | 'tarneeb' | 'tarneeb-41' | 'manual-adjustment';
   kingdomIndex?: number;
   kingdomOwnerId?: string;
-  input: TrixRoundInput | TarneebRoundInput | Tarneeb41RoundInput | ManualAdjustmentInput;
+  input: TrixRoundInput | LashRoundInput | TrixRankingInput | TarneebRoundInput | Tarneeb41RoundInput | ManualAdjustmentInput;
   scoreDelta: Record<string, number>;
   scoreAfter: Record<string, number>;
   createdAt: string;
   note?: string;
 };
 
-export type PlayerProfile = { id: string; name: string; gamesPlayed: number; lastPlayedAt: string };
+export type PlayerProfile = { id: string; name: string; photo?: Blob; createdAt: string; updatedAt: string; lastPlayedAt?: string; gamesPlayed?: number };
 
 export type AppSettings = {
   id: 'main';
@@ -154,6 +164,30 @@ export type AppSettings = {
   roundReactions?: boolean;
   onboardingSeen: boolean;
   lastActiveGameId?: string;
+  preferredTarneebTarget?: number;
+  contextualMessages?: boolean;
+};
+
+export type MessageCategory = 'fast-lash' | 'fast-trix' | 'old-man' | 'tarneeb-break' | 'cc-lash';
+export type MessageEvent = 'lash-owner-score' | 'trix-partnership' | 'old-man-owner' | 'tarneeb-break';
+export type MessageRule = {
+  id: string;
+  factoryId: string;
+  category: MessageCategory;
+  gameTypes: GameType[];
+  event: MessageEvent;
+  minScore?: number;
+  maxScore?: number;
+  ownerScore?: number;
+  partnerScore?: number;
+  doubled?: boolean;
+  template: string;
+  durationMs: number;
+  enabled: boolean;
+  priority: number;
+  userAdded?: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type RulePreset = {

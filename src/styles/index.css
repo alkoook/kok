@@ -82,6 +82,17 @@ button { touch-action: manipulation; }
 .reaction-progress { animation: reaction-progress linear forwards; }
 @keyframes summary-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes summary-crown { 0% { transform: scale(.8) rotate(-5deg); } 70% { transform: scale(1.06) rotate(2deg); } 100% { transform: scale(1) rotate(0); } }
+@keyframes context-message-in { from { opacity: 0; transform: translateY(22px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes message-progress { to { transform: scaleX(0); } }
+@keyframes score-pop { 50% { transform: scale(1.08); } }
+@keyframes trix-winner { 0% { transform: scale(.92); } 70% { transform: scale(1.04); } 100% { transform: scale(1); } }
+.context-message { animation: context-message-in .28s cubic-bezier(.2,.8,.2,1) both; }
+.message-progress { transform-origin: right; animation: message-progress linear forwards; }
+.score-pop { transition: color .2s ease, transform .2s ease; animation: score-pop .28s ease-out; }
+.trix-winner { animation: trix-winner .32s cubic-bezier(.2,.8,.2,1); }
+.contract-switch { transition: transform .18s ease, border-color .18s ease; }
+.contract-switch:active { transform: scale(.98); }
+.match-finish { animation: summary-rise .4s cubic-bezier(.2,.8,.2,1); }
 .summary-hero { animation: summary-rise .38s cubic-bezier(.2,.8,.2,1) both; }
 .summary-hero svg { animation: summary-crown .42s .12s cubic-bezier(.2,.8,.2,1) both; }
 .summary-award-card { animation: summary-rise .32s cubic-bezier(.2,.8,.2,1) both; }

@@ -10,6 +10,7 @@ import { formatDate, GAME_LABELS, isTrix } from '../../utils';
 const gameCards: { type: GameType; subtitle: string; icon: typeof Crown; colors: string }[] = [
   { type: 'trix-fast', subtitle: 'Complex + Trix', icon: Gauge, colors: 'from-sky-500/20 to-indigo-500/5 text-sky-600 dark:text-sky-300' },
   { type: 'trix-slow', subtitle: '5 تسميات', icon: Crown, colors: 'from-teal-500/20 to-emerald-500/5 text-teal-600 dark:text-teal-300' },
+  { type: 'cc', subtitle: 'لطش + لطش', icon: Club, colors: 'from-rose-500/20 to-orange-500/5 text-rose-600 dark:text-rose-300' },
   { type: 'tarneeb-61', subtitle: 'ضمان من 7 إلى 13', icon: Spade, colors: 'from-violet-500/20 to-fuchsia-500/5 text-violet-600 dark:text-violet-300' },
   { type: 'tarneeb-41', subtitle: 'ضمان فردي', icon: Club, colors: 'from-orange-500/20 to-amber-500/5 text-orange-600 dark:text-orange-300' }
 ];
@@ -32,6 +33,6 @@ export function HomePage() {
 
 function ActiveGame({ game }: { game: GameSession }) {
   const displayedScores = isTrix(game.gameType) && game.trixMode === 'partnership' && game.teams ? aggregatePartnershipScores(game.scores, game.teams) : game.scores;
-  const scoreIds = game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) && game.trixMode !== 'partnership' ? game.players.map((player) => player.id) : game.teams?.map((team) => team.id) ?? game.players.map((player) => player.id);
+  const scoreIds = game.rulesSnapshot.kind === 'tarneeb-41-v2' || (isTrix(game.gameType) || game.gameType === 'cc') && game.trixMode !== 'partnership' ? game.players.map((player) => player.id) : game.teams?.map((team) => team.id) ?? game.players.map((player) => player.id);
   return <Link to={`/game/${game.id}`} className="relative min-w-[88%] snap-start overflow-hidden rounded-[28px] bg-ink p-5 text-white shadow-xl dark:bg-surface"><div className="absolute -left-8 -top-8 size-28 rounded-full bg-mint-500/15 blur-xl"/><div className="relative"><div className="flex items-center justify-between"><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold">{GAME_LABELS[game.gameType]}</span><span className="text-xs text-white/60">{game.currentRound} جولة</span></div><p className="mt-4 truncate text-sm text-white/70">{game.teams?.map((team) => team.name).join(' ضد ') ?? game.players.map((player) => player.name).join('، ')}</p><div className="my-3 flex gap-4">{scoreIds.map((id) => <strong key={id} className="text-3xl font-black tabular-nums">{displayedScores[id] ?? 0}</strong>)}</div><span className="flex items-center gap-2 font-black text-mint-300">متابعة المباراة <ArrowLeft size={18}/></span></div></Link>;
 }
