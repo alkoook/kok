@@ -40,7 +40,13 @@ export function NewGamePage() {
   if (!validTypes.includes(gameType)) return <Navigate to="/" replace/>;
 
   const assign = (seat: Seat) => {
-    if (seat.profileId && seats.some((current) => current?.profileId === seat.profileId)) return;
+    if (seat.profileId) {
+      const selectedIndex = seats.findIndex((current) => current?.profileId === seat.profileId);
+      if (selectedIndex >= 0) {
+        setSeats((current) => current.map((value, index) => index === selectedIndex ? undefined : value));
+        return;
+      }
+    }
     const empty = seats.findIndex((value) => !value);
     if (empty < 0) return;
     setSeats((current) => current.map((value, index) => index === empty ? seat : value));
@@ -74,8 +80,8 @@ export function NewGamePage() {
         { id: uid(), name: teamNames[1].trim() || `${players[1].name} و${players[3].name}`, playerIds: [players[1].id, players[3].id] }
       ] : undefined;
       let rulesSnapshot: RulesSnapshot;
-      if (gameType === 'trix-fast') rulesSnapshot = { kind: 'fast-trix-v4', version: 4 };
-      else if (gameType === 'cc') rulesSnapshot = { kind: 'cc-v2', version: 2 };
+      if (gameType === 'trix-fast') rulesSnapshot = { kind: 'fast-trix-v5', version: 5 };
+      else if (gameType === 'cc') rulesSnapshot = { kind: 'cc-v3', version: 3 };
       else if (gameType === 'trix-slow') {
         const stored = preset?.rules && 'kingPenalty' in preset.rules ? preset.rules : DEFAULT_TRIX_RULES;
         rulesSnapshot = { kind: 'trix', version: 2, rules: { ...structuredClone(stored) as TrixRules, version: 2, doublingEnabled: true } };
@@ -86,7 +92,7 @@ export function NewGamePage() {
       const game: GameSession = {
         id: uid(), gameType, status: 'active', players, teams, createdAt: now, updatedAt: now, currentRound: 0,
         scores: Object.fromEntries(scoreIds.map((id) => [id, 0])), rulesSnapshot,
-        rulesVersion: gameType === 'trix-fast' ? 4 : gameType === 'cc' ? 2 : 2,
+        rulesVersion: gameType === 'trix-fast' ? 5 : gameType === 'cc' ? 3 : 2,
         trixMode: supportsMode ? mode : undefined,
         firstKingdomOwnerId: supportsMode ? players[firstOwner].id : undefined
       };
@@ -106,7 +112,7 @@ export function NewGamePage() {
     <section className="surface mb-4 p-4">
       <div className="mb-3"><h2 className="font-black">المقاعد الأربعة</h2><p className="muted text-xs">اختر لاعبًا دائمًا أو أضف لاعبًا مؤقتًا، ثم رتّب المقاعد قبل البدء.</p></div>
       <div className="grid grid-cols-2 gap-2">{seats.map((seat, index) => <SeatCard key={index} index={index} seat={seat} profile={profiles.find((profile) => profile.id === seat?.profileId)} owner={firstOwner === index} onOwner={() => setFirstOwner(index)} onRemove={() => setSeats((current) => current.map((value, seatIndex) => seatIndex === index ? undefined : value))} onMove={move}/>)}</div>
-      {profiles.length > 0 && <div className="mt-4"><label className="relative block"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/><input className="field pe-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن لاعب دائم"/></label><div className="scrollbar-hidden mt-2 flex gap-2 overflow-x-auto pb-1">{filteredProfiles.map((profile) => { const selected = seats.some((seat) => seat?.profileId === profile.id); return <button key={profile.id} data-player-name={profile.name} aria-label={`اختيار اللاعب ${profile.name}`} aria-pressed={selected} disabled={selected || filled} className={`flex min-h-14 shrink-0 items-center gap-2 rounded-2xl border p-2 pe-3 ${selected ? 'border-mint-500 bg-mint-500/10 opacity-70' : 'border-[var(--border)] bg-slate-100 dark:bg-white/5'}`} onClick={() => assign({ key: profile.id, name: profile.name, profileId: profile.id, temporary: false })}><PlayerAvatar name={profile.name} photo={profile.photo} size="sm"/><b className="text-sm">{profile.name}</b>{selected && <Check size={16}/>}</button>; })}</div></div>}
+      {profiles.length > 0 && <div className="mt-4"><label className="relative block"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/><input className="field pe-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن لاعب دائم"/></label><div data-testid="permanent-player-picker" className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">{filteredProfiles.map((profile) => { const selected = seats.some((seat) => seat?.profileId === profile.id); return <button key={profile.id} data-player-name={profile.name} aria-label={`${selected ? 'إزالة' : 'اختيار'} اللاعب ${profile.name}`} aria-pressed={selected} disabled={filled && !selected} className={`flex min-h-14 min-w-0 items-center gap-2 rounded-2xl border p-2 ${selected ? 'border-mint-500 bg-mint-500/10' : 'border-[var(--border)] bg-slate-100 dark:bg-white/5'} disabled:opacity-40`} onClick={() => assign({ key: profile.id, name: profile.name, profileId: profile.id, temporary: false })}><PlayerAvatar name={profile.name} photo={profile.photo} size="sm"/><b className="min-w-0 flex-1 truncate text-right text-sm">{profile.name}</b>{selected && <Check className="shrink-0" size={16}/>}</button>; })}</div></div>}
       <div className="mt-3 rounded-2xl bg-slate-100 p-3 dark:bg-white/5"><span className="mb-2 block text-xs font-black">+ لاعب مؤقت</span><div className="flex gap-2"><input className="field" value={temporaryName} onChange={(event) => setTemporaryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addTemporary(); }} placeholder="اسم اللاعب المؤقت"/><Button size="sm" icon={<Plus/>} disabled={!temporaryName.trim() || filled} onClick={addTemporary}>إضافة</Button></div></div>
     </section>
     {(gameType.startsWith('tarneeb') || supportsMode && mode === 'partnership') && <section className="surface mb-4 p-4"><h2 className="font-black">الشراكة واضحة قبل البدء</h2><div className="mt-3 grid grid-cols-2 gap-2"><TeamPreview label="الفريق A" seats={[seats[0], seats[2]]}/><TeamPreview label="الفريق B" seats={[seats[1], seats[3]]}/></div><p className="muted my-3 text-center text-xs">المقعد 1 + 3 ضد المقعد 2 + 4</p><div className="grid grid-cols-2 gap-2"><input className="field" value={teamNames[0]} onChange={(event) => setTeamNames([event.target.value, teamNames[1]])} placeholder="اسم الفريق A (اختياري)"/><input className="field" value={teamNames[1]} onChange={(event) => setTeamNames([teamNames[0], event.target.value])} placeholder="اسم الفريق B (اختياري)"/></div></section>}

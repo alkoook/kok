@@ -33,9 +33,11 @@ export async function createFastGameCard(game: GameSession, profiles: Array<Play
     context.textAlign = 'left'; context.fillStyle = score >= 0 ? '#2dd4bf' : '#fb7185'; context.font = '900 42px Tahoma'; context.fillText(String(score), 150, y + 75); context.textAlign = 'right';
   }
   const highlight = summary?.titles[0] ? `${summary.titles[0].title}: ${summary.titles[0].subject}` : summary?.awards[0] ? `${summary.awards[0].title}: ${summary.awards[0].subject}` : undefined;
-  const roast = summary?.roasts[0];
+  const killerStatistic = summary?.funnyStatistics[0];
+  const summaryLine = summary?.story[0];
   if (highlight) { context.fillStyle = '#fbbf24'; context.font = '800 30px "Noto Sans Arabic Variable", Tahoma'; context.fillText(`🏆 ${highlight}`, 970, 1080); }
-  if (roast) { context.fillStyle = '#f8fafc'; context.font = '700 26px "Noto Sans Arabic Variable", Tahoma'; context.fillText(`🔥 ${roast.slice(0, 75)}`, 970, 1150); }
+  if (killerStatistic) { context.fillStyle = '#f8fafc'; context.font = '700 26px "Noto Sans Arabic Variable", Tahoma'; context.fillText(`📊 ${killerStatistic.label}: ${killerStatistic.value}`, 970, 1150); }
+  if (summaryLine) { context.fillStyle = '#cbd5e1'; context.font = '600 22px "Noto Sans Arabic Variable", Tahoma'; context.fillText(summaryLine.slice(0, 85), 970, 1205); }
   context.fillStyle = '#94a3b8'; context.font = '600 24px "Noto Sans Arabic Variable", Tahoma'; context.fillText('محفوظة ومولّدة دون إنترنت', 970, 1280);
   return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('تعذر حفظ البطاقة')), 'image/png', 1));
 }

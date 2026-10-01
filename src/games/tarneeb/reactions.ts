@@ -55,7 +55,7 @@ export const TARNEEB_PRIVATE_FAILURE_MESSAGES: ReactionMessage[] = [
   { id: 'failure-private-2', message: 'كس اخت هالقعدة ولو' },
   { id: 'failure-private-3', message: 'انكسر الحمار ريتو يلحس طيز أبو منير' },
   { id: 'failure-private-4', message: 'أبو ربيع ما اشتغل هالشغل الايري' },
-  { id: 'failure-private-5', message: 'أبو أسامة اللي قلك تلعب هاللعب الطيزي؟؟!' }
+  { id: 'failure-private-5', message: 'أبو أسامة اللي قلك تلعب هاللعب ؟؟!' }
 ];
 
 export const kabootMessage: Tarneeb61Reaction = {

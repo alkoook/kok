@@ -6,6 +6,9 @@ describe('تعليقات جولات طرنيب 61', () => {
     expect(TARNEEB_SUCCESS_MESSAGES.map((message) => message.id)).toEqual(Array.from({ length: 10 }, (_, index) => `success-${index + 1}`));
     expect(TARNEEB_FAILURE_MESSAGES.map((message) => message.id)).toEqual(Array.from({ length: 16 }, (_, index) => `failure-${index + 1}`));
     expect(TARNEEB_PRIVATE_FAILURE_MESSAGES.map((message) => message.id)).toEqual(Array.from({ length: 5 }, (_, index) => `failure-private-${index + 1}`));
+    expect(TARNEEB_SUCCESS_MESSAGES.map((message) => message.message)).toEqual(['عاااااش يا وحش', 'ضمن وجاب السبع', 'وحش ولككك', 'ملك الـ61', 'شيلك من الضمان ..شفت الفن باللعب ؟!', 'الكينغ ضمن الكينغ جاب', 'رسالة لكل الخنافس ..هل من منافس😎', 'ما بدي اسمع نفس ولككك', 'ضمنت وجبت ..مافي شي جديد', 'تم الدعس🐾']);
+    expect(TARNEEB_FAILURE_MESSAGES.map((message) => message.message)).toEqual(['انكسر بخشي 🤣', 'مين الحمار اللي ضمن ؟!', 'طيب ما بتعرف تلعب شدة ...ليش لتصرع طيزنا وتقول لعبوني ؟!', 'قوم وحط محلك صحن سيجارة', 'ولو انتة امتحان من رب العالمين لشريكك', 'بهجت صابر بدو ياك بكلمتين', 'خراي عاللي مسكك شدة', 'معلم كأنو الـ61 مو لعبتك ؟؟!', 'لا عاد تضمن مشان الله', 'مين اتصل بهالحمار وجابوا عالسهرة ؟!', 'حجي أهلك اتصلوا قال بدن ياك عالسريع', 'لك بدك تضلك حمار ولوووو', 'عطوه لشريكو حبة تحت اللسان', 'شقني وجيبا تلحس طيزي', 'يلا حبيبي يلا بطلنا نلعب شدة', 'شو أبو منير اللي ضمن ؟!']);
+    expect(TARNEEB_PRIVATE_FAILURE_MESSAGES.map((message) => message.message)).toEqual(['انكسر الاير', 'كس اخت هالقعدة ولو', 'انكسر الحمار ريتو يلحس طيز أبو منير', 'أبو ربيع ما اشتغل هالشغل الايري', 'أبو أسامة اللي قلك تلعب هاللعب ؟؟!']);
   });
   it('يعطي انكسار ضمان 7 الأولوية العليا', () => {
     const reaction = getTarneeb61Reaction({ bid: 7, actualTricks: 6, contractSucceeded: false });

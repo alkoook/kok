@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { aggregatePartnershipScores, calculateTrixRound, scoreKingOfHearts, scoreQueens, validateKingdomBalance, validatePartnershipKingdomBalance } from './scoring';
-import { DEFAULT_TRIX_RULES } from './rules';
+import { aggregatePartnershipScores, calculateTrixRound, complementaryTeamCounts, scoreKingOfHearts, scoreQueens, validateKingdomBalance, validatePartnershipKingdomBalance } from './scoring';
+import { DEFAULT_TRIX_RULES, partnershipContractTotal } from './rules';
 import type { GamePlayer, GameTeam } from '../../types';
 
 const players: GamePlayer[] = ['a', 'b', 'c', 'd'].map((id, seat) => ({ id, name: id, seat }));
@@ -24,6 +24,7 @@ describe('محرك حساب التركس', () => {
   it('يحسب بنت مدبلة مع التعويض', () => expect(scoreQueens([{ id: 'q1', takenByPlayerId: 'a', doubled: true, doubledByPlayerId: 'b' }], players, DEFAULT_TRIX_RULES)).toEqual({ a: -50, b: 25, c: 0, d: 0 }));
   it('يسجل لطوش الشراكة على الفريقين', () => expect(aggregatePartnershipScores(calculateTrixRound({ contract: 'tricks', counts: { x: 8, y: 5 } }, players, DEFAULT_TRIX_RULES, teams), teams)).toEqual({ x: -120, y: -75 }));
   it('يسجل الديناري في الشراكة على الفريقين', () => expect(aggregatePartnershipScores(calculateTrixRound({ contract: 'diamonds', counts: { x: 8, y: 5 } }, players, DEFAULT_TRIX_RULES, teams), teams)).toEqual({ x: -80, y: -50 }));
+  it.each([['diamonds', 13], ['tricks', 13]] as const)('يشتق طرف %s الثاني من مجموع القاعدة نفسه', (contract, total) => { expect(partnershipContractTotal(contract, DEFAULT_TRIX_RULES)).toBe(total); expect(complementaryTeamCounts('x', 8, partnershipContractTotal(contract, DEFAULT_TRIX_RULES)!, teams)).toEqual({ x: 8, y: 5 }); });
   it('بنت مدبلة — المدبل من الفريق الآخر: الفريق الآكل -50 والمقابل +25', () => {
     const result = calculateTrixRound({ contract: 'queens', queens: [{ id: 'hearts', suit: 'hearts', takenByTeamId: 'x', doubled: true, doubledByPlayerId: 'b' }] }, players, DEFAULT_TRIX_RULES, teams);
     expect(aggregatePartnershipScores(result, teams)).toEqual({ x: -50, y: 25 });

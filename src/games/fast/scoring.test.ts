@@ -6,13 +6,14 @@ const players: GamePlayer[] = ['a', 'b', 'c', 'd'].map((id, seat) => ({ id, name
 const teams = [{ id: 'x', name: 'A + C', playerIds: ['a', 'c'] as [string, string] }, { id: 'y', name: 'B + D', playerIds: ['b', 'd'] as [string, string] }];
 const partnershipGame: GameSession = { id: 'g', gameType: 'trix-fast', status: 'active', players, teams, trixMode: 'partnership', createdAt: '', updatedAt: '', currentRound: 0, scores: { x: 0, y: 0 }, rulesSnapshot: { kind: 'fast-trix-v4', version: 4 }, firstKingdomOwnerId: 'b' };
 const soloGame: GameSession = { ...partnershipGame, id: 'solo', teams: undefined, trixMode: 'solo', scores: { a: 0, b: 0, c: 0, d: 0 } };
-const round = (id: string, kingdomIndex: number, type: 'lash' | 'trix-ranking', delta: Record<string, number>): GameRound => ({ id, gameId: 'g', index: Number(id.slice(1)), type, kingdomIndex, input: type === 'lash' ? createPartnershipLashInput(delta, { eaterPlayerId: 'a', doubled: false }) : { kind: 'trix-ranking', finishingOrder: ['a', 'b', 'c', 'd'] }, scoreDelta: delta, scoreAfter: delta, createdAt: '' });
+const round = (id: string, kingdomIndex: number, type: 'lash' | 'trix-ranking', delta: Record<string, number>): GameRound => ({ id, gameId: 'g', index: Number(id.slice(1)), type, kingdomIndex, input: type === 'lash' ? createPartnershipLashInput('x', delta.x, { eaterPlayerId: 'a', doubled: false }) : { kind: 'trix-ranking', finishingOrder: ['a', 'b', 'c', 'd'] }, scoreDelta: delta, scoreAfter: delta, createdAt: '' });
 
 describe('Fast Trix وCC', () => {
   it('يميز مصدر لطش الشراكة عن اليهودية بلا تقسيم وهمي', () => {
-    const teamInput = createPartnershipLashInput({ x: -180, y: -320 }, { eaterPlayerId: 'a', doubled: false });
+    const teamInput = createPartnershipLashInput('x', -180, { eaterPlayerId: 'a', doubled: false });
     const soloInput = createSoloLashInput({ a: 25, b: -200, c: -175, d: -150 }, { eaterPlayerId: 'a', doubled: false });
     expect(validateLashInput(teamInput, partnershipGame)).toBe(true);
+    expect(teamInput).toEqual({ kind: 'lash-partnership-fixed-total', enteredTeamId: 'x', enteredScore: -180, contractTotal: -500, oldMan: { eaterPlayerId: 'a', doubled: false } });
     expect(deriveFastRoundDelta(teamInput, partnershipGame)).toEqual({ x: -180, y: -320 });
     expect(validateLashInput(soloInput, soloGame)).toBe(true);
     expect(validateLashInput(soloInput, partnershipGame)).toBe(false);

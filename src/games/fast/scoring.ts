@@ -1,4 +1,4 @@
-import type { GamePlayer, GameRound, GameSession, GameTeam, LashRoundInput, PartnershipLashRoundInput, SoloLashRoundInput, TrixRankingInput } from '../../types';
+import type { GamePlayer, GameRound, GameSession, GameTeam, LashRoundInput, PartnershipFixedTotalLashRoundInput, SoloLashRoundInput, TrixRankingInput } from '../../types';
 
 export const LASH_TOTAL = -500;
 export const TRIX_TOTAL = 500;
@@ -16,7 +16,9 @@ export function validateLashScores(scores: Record<string, number>, expectedIds: 
 
 export function validateLashInput(input: LashRoundInput, game: GameSession): boolean {
   if (game.trixMode === 'partnership') {
-    return Boolean(game.teams?.length === 2 && input.kind === 'lash-partnership' && validateLashScores(input.scoresByTeam, game.teams.map((team) => team.id)));
+    if (!game.teams || game.teams.length !== 2) return false;
+    if (input.kind === 'lash-partnership-fixed-total') return input.contractTotal === LASH_TOTAL && game.teams.some((team) => team.id === input.enteredTeamId) && Number.isInteger(input.enteredScore);
+    return input.kind === 'lash-partnership' && validateLashScores(input.scoresByTeam, game.teams.map((team) => team.id));
   }
   return input.kind === 'lash-solo' && validateLashScores(input.scoresByPlayer, game.players.map((player) => player.id));
 }
@@ -53,12 +55,19 @@ export function createSoloLashInput(scoresByPlayer: Record<string, number>, oldM
   return { kind: 'lash-solo', scoresByPlayer, oldMan };
 }
 
-export function createPartnershipLashInput(scoresByTeam: Record<string, number>, oldMan: PartnershipLashRoundInput['oldMan']): PartnershipLashRoundInput {
-  return { kind: 'lash-partnership', scoresByTeam, oldMan };
+export function createPartnershipLashInput(enteredTeamId: string, enteredScore: number, oldMan: PartnershipFixedTotalLashRoundInput['oldMan'], contractTotal = LASH_TOTAL): PartnershipFixedTotalLashRoundInput {
+  return { kind: 'lash-partnership-fixed-total', enteredTeamId, enteredScore, contractTotal, oldMan };
+}
+
+export function partnershipLashScores(input: Extract<LashRoundInput, { kind: 'lash-partnership' | 'lash-partnership-fixed-total' }>, teams: GameTeam[]): Record<string, number> {
+  if (input.kind === 'lash-partnership') return { ...input.scoresByTeam };
+  const otherTeam = teams.find((team) => team.id !== input.enteredTeamId);
+  if (!otherTeam) return { [input.enteredTeamId]: input.enteredScore };
+  return { [input.enteredTeamId]: input.enteredScore, [otherTeam.id]: input.contractTotal - input.enteredScore };
 }
 
 export function deriveFastRoundDelta(input: LashRoundInput | TrixRankingInput, game: GameSession): Record<string, number> {
-  if (input.kind === 'lash-partnership') return { ...input.scoresByTeam };
+  if (input.kind === 'lash-partnership' || input.kind === 'lash-partnership-fixed-total') return partnershipLashScores(input, game.teams ?? []);
   if (input.kind === 'lash-solo' || input.kind === 'lash') {
     if (input.kind === 'lash' && game.trixMode === 'partnership' && game.teams) {
       return Object.fromEntries(game.teams.map((team) => [team.id, team.playerIds.reduce((sum, id) => sum + (input.scoresByPlayer[id] ?? 0), 0)]));
@@ -73,5 +82,5 @@ export function deriveFastRoundDelta(input: LashRoundInput | TrixRankingInput, g
 }
 
 export function isFastGame(game: GameSession): boolean {
-  return game.gameType === 'trix-fast' && (game.rulesSnapshot.kind === 'fast-trix-v3' || game.rulesSnapshot.kind === 'fast-trix-v4') || game.gameType === 'cc' && (game.rulesSnapshot.kind === 'cc-v1' || game.rulesSnapshot.kind === 'cc-v2');
+  return game.gameType === 'trix-fast' && (game.rulesSnapshot.kind === 'fast-trix-v3' || game.rulesSnapshot.kind === 'fast-trix-v4' || game.rulesSnapshot.kind === 'fast-trix-v5') || game.gameType === 'cc' && (game.rulesSnapshot.kind === 'cc-v1' || game.rulesSnapshot.kind === 'cc-v2' || game.rulesSnapshot.kind === 'cc-v3');
 }

@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { addRound, db, replaceRound, undoLastRound } from '../../db/database';
 import { effectiveMessageRules, matchingMessages, pickMessage, readRecentMessageIds, rememberMessageId, renderMessage } from '../../games/fast/messages';
-import { ownerForKingdom, partnerForPlayer, teamForPlayer, trixRankingDelta } from '../../games/fast/scoring';
+import { ownerForKingdom, partnerForPlayer, partnershipLashScores, teamForPlayer, trixRankingDelta } from '../../games/fast/scoring';
 import { shareFastGame } from '../../games/fast/shareCard';
 import type { GameRound, GameSession, LashRoundInput, MessageRule, TrixRankingInput } from '../../types';
 import { scoreText } from '../../utils';
@@ -21,7 +21,7 @@ export function FastGamePanel({ game, rounds }: { game: GameSession; rounds: Gam
   const rules = useMemo(() => effectiveMessageRules(storedRules), [storedRules]);
   const [chosen, setChosen] = useState<'lash' | 'trix-ranking'>();
   const [editing, setEditing] = useState<GameRound>();
-  const [message, setMessage] = useState<{ text: string; duration: number }>();
+  const [messages, setMessages] = useState<Array<{ text: string; duration: number }>>([]);
   const played = rounds.filter((round) => round.type !== 'manual-adjustment');
   const kingdomIndex = Math.min(3, Math.floor(played.length / 2));
   const owner = ownerForKingdom(game, kingdomIndex);
@@ -33,18 +33,18 @@ export function FastGamePanel({ game, rounds }: { game: GameSession; rounds: Gam
     const selected = pickMessage(candidates, readRecentMessageIds());
     if (!selected) return;
     rememberMessageId(selected.id);
-    setMessage({ text: renderMessage(selected, context), duration: selected.durationMs });
+    setMessages((current) => [...current, { text: renderMessage(selected, context), duration: selected.durationMs }]);
   }, [settings?.contextualMessages, settings?.roundReactions]);
   const saveLash = async (input: LashRoundInput, delta: Record<string, number>) => {
     await addRound({ gameId: game.id, type: 'lash', kingdomIndex, kingdomOwnerId: owner.id, input, scoreDelta: delta });
     const ownerTeam = teamForPlayer(owner.id, game.teams);
-    const ownerScore = input.kind === 'lash-partnership' ? input.scoresByTeam[ownerTeam?.id ?? ''] : input.scoresByPlayer[owner.id];
+    const ownerScore = input.kind === 'lash-partnership' || input.kind === 'lash-partnership-fixed-total' ? partnershipLashScores(input, game.teams ?? [])[ownerTeam?.id ?? ''] : input.scoresByPlayer[owner.id];
     const eaterTeam = teamForPlayer(input.oldMan.eaterPlayerId, game.teams);
     const oldManEvent: MessageRule['event'] = input.oldMan.eaterPlayerId === owner.id ? 'old-man-owner' : ownerTeam && eaterTeam?.id === ownerTeam.id ? 'old-man-partner' : 'old-man-opponent';
     const occurrences = played.filter((round) => round.type === 'lash' && (round.input as LashRoundInput).oldMan.eaterPlayerId === input.oldMan.eaterPlayerId).length + 1;
     const context = { game, owner, ownerScore, eaterPlayerId: input.oldMan.eaterPlayerId, doubled: input.oldMan.doubled, occurrences, intensity: settings?.roastIntensity ?? 4 };
-    const oldMan = matchingMessages(rules, context, oldManEvent);
-    showRule(oldMan.length ? oldMan : matchingMessages(rules, context, 'lash-owner-score'), context);
+    showRule(matchingMessages(rules, context, 'lash-owner-score'), context);
+    showRule(matchingMessages(rules, context, oldManEvent), context);
     setChosen(undefined);
   };
   const saveTrix = async (input: TrixRankingInput, delta: Record<string, number>) => {
@@ -69,7 +69,7 @@ export function FastGamePanel({ game, rounds }: { game: GameSession; rounds: Gam
     {chosen && <section className="surface mt-4 p-4"><div className="mb-3 flex items-center justify-between"><h3 className="text-xl font-black">{currentLabel}</h3><Button size="sm" variant="ghost" onClick={() => setChosen(undefined)}>إلغاء</Button></div>{chosen === 'lash' ? <LashScoreEntry game={game} onConfirm={saveLash}/> : <TrixRankingEntry players={game.players} onConfirm={saveTrix}/>}</section>}
     {editing && <section className="surface mt-4 p-4"><div className="mb-3 flex items-center justify-between"><h3 className="font-black">تعديل الجولة {editing.index + 1}</h3><Button size="sm" variant="ghost" onClick={() => setEditing(undefined)}>إلغاء</Button></div>{editing.type === 'lash' ? <LashScoreEntry game={game} initial={editing.input as LashRoundInput} onConfirm={async (input, delta) => { await replaceRound(editing.id, { input, scoreDelta: delta, type: 'lash', note: editing.note }); setEditing(undefined); }}/> : <TrixRankingEntry players={game.players} initial={editing.input as TrixRankingInput} onConfirm={async (input, delta) => { await replaceRound(editing.id, { input, scoreDelta: delta, type: 'trix-ranking', note: editing.note }); setEditing(undefined); }}/>}</section>}
     {played.length > 0 && !editing && <section className="mt-4"><span className="eyebrow">الجولات المسجلة</span><div className="mt-2 space-y-2">{[...played].reverse().map((round) => <button key={round.id} onClick={() => { setChosen(undefined); setEditing(round); }} className="flex min-h-12 w-full items-center justify-between rounded-2xl bg-[var(--surface)] px-4 text-sm font-bold"><span>المملكة {(round.kingdomIndex ?? 0) + 1} · {round.type === 'lash' ? 'لطش' : 'تركس'}</span><Pencil size={16}/></button>)}</div></section>}
-    {message && <ContextMessageOverlay message={message.text} durationMs={message.duration} onDismiss={() => setMessage(undefined)}/>}
+    {messages[0] && <ContextMessageOverlay message={messages[0].text} durationMs={messages[0].duration} onDismiss={() => setMessages((current) => current.slice(1))}/>}
   </div>;
 }
 

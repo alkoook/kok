@@ -65,8 +65,10 @@ export type RulesSnapshot =
   | { kind: 'tarneeb-41-v2'; version: 2; rules: Tarneeb41RulesV2 }
   | { kind: 'fast-trix-v3'; version: 3 }
   | { kind: 'fast-trix-v4'; version: 4 }
+  | { kind: 'fast-trix-v5'; version: 5 }
   | { kind: 'cc-v1'; version: 1 }
-  | { kind: 'cc-v2'; version: 2 };
+  | { kind: 'cc-v2'; version: 2 }
+  | { kind: 'cc-v3'; version: 3 };
 
 export type GameSession = {
   id: string;
@@ -80,7 +82,7 @@ export type GameSession = {
   currentRound: number;
   scores: Record<string, number>;
   rulesSnapshot: RulesSnapshot;
-  rulesVersion?: 1 | 2 | 3 | 4;
+  rulesVersion?: 1 | 2 | 3 | 4 | 5;
   trixMode?: TrixMode;
   firstKingdomOwnerId?: string;
   winnerIds?: string[];
@@ -145,13 +147,20 @@ export type PartnershipLashRoundInput = {
   scoresByTeam: Record<string, number>;
   oldMan: OldManMetadata;
 };
+export type PartnershipFixedTotalLashRoundInput = {
+  kind: 'lash-partnership-fixed-total';
+  enteredTeamId: string;
+  enteredScore: number;
+  contractTotal: number;
+  oldMan: OldManMetadata;
+};
 /** Read-only compatibility for sessions created by rules V3. New rounds never use it. */
 export type LegacyLashRoundInput = {
   kind: 'lash';
   scoresByPlayer: Record<string, number>;
   oldMan: OldManMetadata;
 };
-export type LashRoundInput = SoloLashRoundInput | PartnershipLashRoundInput | LegacyLashRoundInput;
+export type LashRoundInput = SoloLashRoundInput | PartnershipFixedTotalLashRoundInput | PartnershipLashRoundInput | LegacyLashRoundInput;
 export type TrixRankingInput = { kind: 'trix-ranking'; finishingOrder: [string, string, string, string] };
 
 export type GameRound = {
@@ -191,6 +200,7 @@ export type MessageRule = {
   category: MessageCategory;
   gameTypes: GameType[];
   event: MessageEvent;
+  trixMode?: 'solo' | 'partnership';
   minScore?: number;
   maxScore?: number;
   ownerScore?: number;
@@ -208,7 +218,14 @@ export type MessageRule = {
   updatedAt: string;
 };
 
-export type SummarySegmentCategory = 'opening' | 'winner' | 'disaster' | 'partnership' | 'trix' | 'kingdom' | 'old-man' | 'comeback' | 'closing' | 'title';
+export type SummarySegmentCategory =
+  | 'opening' | 'dramatic-opening' | 'winner' | 'loser' | 'blowout' | 'close-match' | 'disaster'
+  | 'comeback' | 'collapse' | 'partnership-praise' | 'partnership-disaster'
+  | 'trix-genius' | 'trix-disaster' | 'kingdom-praise' | 'kingdom-disaster'
+  | 'old-man' | 'doubled-old-man' | 'repeated-old-man' | 'cc' | 'fast-trix'
+  | 'funny-stat' | 'mock-news' | 'mock-medical' | 'mock-police' | 'mock-school'
+  | 'mock-job-review' | 'fake-retirement' | 'transfer-market' | 'mock-obituary'
+  | 'closing' | 'victory-closing' | 'disaster-closing' | 'title';
 export type ContentOverride = {
   id: string;
   factoryId: string;

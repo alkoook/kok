@@ -5,7 +5,7 @@ import { Button } from '../../components/common/Button';
 import { Modal } from '../../components/common/Modal';
 import { deleteGame } from '../../db/database';
 import { aggregatePartnershipScores } from '../../games/trix/scoring';
-import { isFastGame, lashTotal } from '../../games/fast/scoring';
+import { isFastGame, lashTotal, partnershipLashScores } from '../../games/fast/scoring';
 import { CONTRACT_LABELS } from '../../games/trix/rules';
 import { useGame } from '../../hooks/useGame';
 import type { GameRound, GameSession, LashRoundInput, ManualAdjustmentInput, Tarneeb41RoundInput, TarneebRoundInput, TrixContract, TrixRankingInput } from '../../types';
@@ -21,7 +21,7 @@ export function GameDetailsPage() {
 
 function RoundCard({ round, game }: { round: GameRound; game: GameSession }) {
   const name = (id: string) => game.teams?.find((team) => team.id === id)?.name ?? game.players.find((player) => player.id === id)?.name ?? id; let title = CONTRACT_LABELS[round.type as TrixContract] ?? round.type; let details: string[] = [];
-  if (round.type === 'lash') { const input = round.input as LashRoundInput; title = `لطش · مملكة ${name(round.kingdomOwnerId ?? '')}`; const rawScores = input.kind === 'lash-partnership' ? input.scoresByTeam : input.scoresByPlayer; details = [...Object.entries(rawScores).map(([id, score]) => `${name(id)}: ${score}`), `المجموع: ${lashTotal(rawScores)}`, `الختيار: ${name(input.oldMan.eaterPlayerId)} · ${input.oldMan.doubled ? 'مدبل' : 'غير مدبل'}`]; }
+  if (round.type === 'lash') { const input = round.input as LashRoundInput; title = `لطش · مملكة ${name(round.kingdomOwnerId ?? '')}`; const rawScores = input.kind === 'lash-partnership' || input.kind === 'lash-partnership-fixed-total' ? partnershipLashScores(input, game.teams ?? []) : input.scoresByPlayer; details = [...Object.entries(rawScores).map(([id, score]) => `${name(id)}: ${score}${input.kind === 'lash-partnership-fixed-total' && id !== input.enteredTeamId ? ' · محسوبة تلقائيًا' : ''}`), `المجموع: ${lashTotal(rawScores)}`, `الختيار: ${name(input.oldMan.eaterPlayerId)} · ${input.oldMan.doubled ? 'مدبل' : 'غير مدبل'}`]; }
   else if (round.type === 'trix-ranking') { const input = round.input as TrixRankingInput; title = `تركس · مملكة ${name(round.kingdomOwnerId ?? '')}`; details = input.finishingOrder.map((id, index) => `${index + 1}. ${name(id)} — ${[200, 150, 100, 50][index]}`); }
   else if (round.type === 'tarneeb') title = `ضمان ${(round.input as TarneebRoundInput).bid}`; else if (round.type === 'tarneeb-41') title = `ضمانات فردية · ${(round.input as Tarneeb41RoundInput).phaseAtRoundStart}`; else if (round.type === 'manual-adjustment') title = `تصحيح · ${name((round.input as ManualAdjustmentInput).targetId)}`;
   return <article className="surface p-4"><span className="eyebrow">الجولة {round.index + 1}</span><h3 className="font-black">{title}</h3>{details.map((detail) => <p className="muted text-xs" key={detail}>{detail}</p>)}<div className="mt-3 grid grid-cols-2 gap-2">{Object.entries(round.scoreDelta).map(([id, score]) => <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-white/5" key={id}><span>{name(id)}</span> <b>{scoreText(score)}</b></div>)}</div>{round.note && <p className="muted mt-2">{round.note}</p>}</article>;

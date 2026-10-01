@@ -6,7 +6,13 @@ import { effectiveSummaryContent, type SummarySegment, type TitleDefinition } fr
 import type { ContentOverride, SummarySegmentCategory } from '../../types';
 import { Button } from '../common/Button';
 
-const labels: Record<SummarySegmentCategory, string> = { opening: 'الافتتاحيات', winner: 'الفائز', disaster: 'الكوارث', partnership: 'الشراكة', trix: 'التركس', kingdom: 'الممالك', 'old-man': 'الختيار', comeback: 'القلبات', closing: 'الخواتيم', title: 'الألقاب' };
+const labels: Record<SummarySegmentCategory, string> = {
+  opening: 'افتتاحيات', 'dramatic-opening': 'افتتاح درامي', winner: 'مدح الفائز', loser: 'مسخرة الخاسر', blowout: 'فوز ساحق', 'close-match': 'مباراة قريبة', disaster: 'كوارث',
+  comeback: 'قلبات', collapse: 'انهيارات', 'partnership-praise': 'مدح الشراكة', 'partnership-disaster': 'نكبة الشراكة', 'trix-genius': 'عبقرية التركس', 'trix-disaster': 'كارثة التركس',
+  'kingdom-praise': 'مملكة قوية', 'kingdom-disaster': 'مملكة منكوبة', 'old-man': 'الختيار', 'doubled-old-man': 'الختيار المدبل', 'repeated-old-man': 'تكرار الختيار', cc: 'CC', 'fast-trix': 'تركس سريعة',
+  'funny-stat': 'إحصاءات مضحكة', 'mock-news': 'أخبار وهمية', 'mock-medical': 'تقارير طبية', 'mock-police': 'محاضر شرطة', 'mock-school': 'تقارير مدرسة', 'mock-job-review': 'تقييم وظيفي',
+  'fake-retirement': 'اعتزال وهمي', 'transfer-market': 'سوق الانتقالات', 'mock-obituary': 'نعي المهارة', closing: 'خواتيم', 'victory-closing': 'ختام انتصار', 'disaster-closing': 'ختام كارثة', title: 'الألقاب'
+};
 type Item = SummarySegment | TitleDefinition;
 
 export function SummaryContentSettings() {

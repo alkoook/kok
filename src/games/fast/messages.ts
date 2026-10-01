@@ -2,94 +2,24 @@ import type { GamePlayer, GameSession, MessageRule } from '../../types';
 import { TARNEEB_FAILURE_MESSAGES, TARNEEB_PRIVATE_FAILURE_MESSAGES, TARNEEB_SUCCESS_MESSAGES, brokenSevenMessage, kabootMessage } from '../tarneeb/reactions';
 import { partnerForPlayer, teamForPlayer } from './scoring';
 
-export type TemplateValues = Partial<Record<'owner' | 'player' | 'partner' | 'score' | 'absScore' | 'team' | 'opponent' | 'opponentTeam' | 'margin' | 'kingdom' | 'target' | 'winner' | 'loser' | 'count', string | number>>;
+export type TemplateValues = Partial<Record<'owner' | 'player' | 'partner' | 'score' | 'absScore' | 'team' | 'opponent' | 'opponentTeam' | 'margin' | 'kingdom' | 'target' | 'winner' | 'loser' | 'count' | 'fourthCount' | 'oldManCount' | 'doubledCount' | 'leadChanges' | 'kingdomWins' | 'ownerBehindPartner' | 'largestSwing' | 'averagePlacement' | 'bestLash', string | number>>;
 export type MessageContext = { game: GameSession; owner: GamePlayer; ownerScore?: number; partnerScore?: number; eaterPlayerId?: string; doubled?: boolean; occurrences?: number; target?: number; intensity?: 1 | 2 | 3 | 4 };
 
 const now = '2026-10-01T00:00:00.000Z';
-type LashBand = { id: string; minScore?: number; maxScore?: number; required: string; count: number; intensity: 1 | 2 | 3 | 4 };
+type LashBand = { id: string; minScore?: number; maxScore?: number; partnership: string; solo: string };
 export const LASH_BANDS: LashBand[] = [
-  { id: 'positive', minScore: 1, required: 'حجي قوم مد الغالي بالقعدة خلي الشباب تاخد الرضا', count: 18, intensity: 1 },
-  { id: '0-to-50', minScore: -50, maxScore: 0, required: 'عاااااش يا وحش الـ{absScore} ولا شي', count: 18, intensity: 1 },
-  { id: '51-to-100', minScore: -100, maxScore: -51, required: 'حلوة ودليل على فهم {owner}', count: 18, intensity: 1 },
-  { id: '101-to-200', minScore: -200, maxScore: -101, required: 'لا بأس حجي لا بأس مقبولة نوعاً ما', count: 20, intensity: 2 },
-  { id: '201-to-249', minScore: -249, maxScore: -201, required: 'شو الترتيب يابا شو هالنتيجة الخرا', count: 28, intensity: 2 },
-  { id: 'exact-250', minScore: -250, maxScore: -250, required: 'يلا انقسمت بيناتنا', count: 28, intensity: 2 },
-  { id: '251-to-300', minScore: -300, maxScore: -251, required: 'شو هاد حمار سبحان مين حجبك عن أكل التبن', count: 30, intensity: 3 },
-  { id: '301-to-350', minScore: -350, maxScore: -301, required: 'خراي عليك وعالشدة وعاللي مسكك ورق شدة وقلك بتفهم تلعب', count: 35, intensity: 3 },
-  { id: '351-to-400', minScore: -400, maxScore: -351, required: 'قوم ع بيتكن ايري فيك وباللي اتصل فيك وعزمك عالقعدة يلا حجي يلا ع بيتكن', count: 40, intensity: 4 },
-  { id: '401-to-450', minScore: -450, maxScore: -401, required: 'شوووووو هاللعب المأير هاد ع شوي رح توصل لمستوى منذر طبانة بالبهم', count: 42, intensity: 4 },
-  { id: '451-to-499', minScore: -499, maxScore: -451, required: 'اووووووووووووه لعب كلاب هاد مو لعب بني آدمين ...شو يا {owner} مو حاسس حالك حمار ...تريك ورق هالشدة وقوم شوف مستقبلك بغير مكان', count: 44, intensity: 4 },
-  { id: '500-or-less', maxScore: -500, required: 'يا جماعة واضحة ......خلونا نقوم نعمل فرشاية لـ {owner} .....طيزو محجوزة لأبو عمر شفلك مكان تاني وغزو منو', count: 46, intensity: 4 }
-];
-
-const goodRoasts = [
-  'بيان رسمي: {owner} طلع من الجولة نظيف وترك الباقي يغسلوا وراه.',
-  'المعلّق الرياضي فقد صوته: {team} لعبها على الواقف والنتيجة {score}.',
-  'يا شباب حدا يفتّش الورق، {owner} شكله مخبّي مخ إضافي.',
-  'مكالمة عاجلة من البيت: رجّعولنا {owner} بعد ما خلص استعراض.',
-  'تقرير المدرسة: فهم ممتاز، سلوك مشاغب، واللطشة بس {absScore}.',
-  'المملكة أعلنت عطلة رسمية احتفالاً بنجاة {team}.',
-  'مقابلة عمل قصيرة: شو خبرتك؟ قالهم نتيجة {score} وسكت.',
-  'خبر عاجل: {owner} اكتشف إن الورق بينلعب بالعقل مو بالصراخ.',
-  'صفقوا للزلمة، مرق من اللطش كأنه معه واسطة بالمملكة.',
-  'الشريك عم يطلع عالسما ويقول الحمد لله طلعت القعدة مستورة.',
-  'هالجولة بدها برواز؛ {team} عامل شغل مرتب زيادة عن اللزوم.',
-  'المنافسين طلبوا فحص منشطات بعد نتيجة {score}.',
-  'يا {partner} دير بالك عليه، اليوم صاحي وعم يفهم.',
-  'المخرج طلب إعادة اللقطة لأن أداء {owner} مو مصدّق.',
-  'نشرة الطقس: أجواء صافية فوق مملكة {owner} وعواصف عند الخصوم.',
-  'حتى الختيار وقف وصفق لهالترتيب.',
-  'الدكتور قال حالته مستقرة، بس عنده ارتفاع مفاجئ بالفهم.',
-  'هاي مو جولة، هاي رسالة تهديد لباقي الطاولة.'
-];
-
-const badRoasts = [
-  'خبر عاجل: تم إخلاء مملكة {owner} بعد تسجيل {score}.',
-  'تقرير الشرطة: آخر مرة شافوا الفهم كان قبل ما يمسك {owner} الورق.',
-  'يا {partner} معك حق تطلب تعويض نهاية خدمة بعد هالجولة.',
-  'إعلان وفاة مهارة اللعب؛ الدفن بعد القعدة والعزاء عند {team}.',
-  'المستشفى طلب زمرة دم للشراكة بعد نتيجة {score}.',
-  'مقابلة العمل انتهت لما قالهم {owner} إنه بيعرف يلعب شدة.',
-  'المدرسة رجعت دفتر العلامات: لعب صفر، ثقة بالنفس مليون.',
-  'المعلّق الرياضي قال ما عاد يقدر يوصف المصيبة وترك الاستديو.',
-  'اتصلوا بأهل {owner}، ابنكن عم يوزع نقاط عالناس.',
-  'وزارة الكوارث فتحت فرع جديد جوّا مملكة {owner}.',
-  'بيان الشراكة: {partner} بريء من كل ما فعله {owner}.',
-  'القاضي حكم بحل فريق {team} فوراً ومنع إعادة التجربة.',
-  'هالـ{absScore} مو نتيجة؛ هاد طلب استقالة بخط اليد.',
-  'الجمهور هتف: بدّلوا {owner} قبل ما يكمّل تخريب.',
-  'فحص النظر طلع سليم، المشكلة إن القرار نفسه خربان.',
-  'المملكة بحاجة ترميم، تأمين، ومعجزة صغيرة.',
-  'يا {opponentTeam} مبروك، الخصم عم يلعب معكن بدون ما يعرف.',
-  'تقرير فني: الورق جيد، الطاولة جيدة، {owner} هو المشكلة.',
-  'الشريك فتح تطبيق وظائف وهو لسه قاعد حدك.',
-  'المذيع قال نعتذر عن المشاهد القاسية ثم عرض النتيجة.',
-  'حدا يعطيه كاسة مي ويشرحله من أول وجديد شو عم نلعب.',
-  'هالجولة تصلح دليل جنائي ضد صاحب المملكة.',
-  'المحفّز النفسي وصل، شاف النتيجة وطلب إجازة.',
-  'المقبرة رفضت تستقبل اللعب لأنه ميت من زمان.',
-  'يا جماعة لا تضحكوا، يمكن {owner} مفكر الأعلى بالسالب أحسن.',
-  'الشراكة عم تطلب لجوء إنساني عند الفريق الثاني.',
-  'مسرحية من فصل واحد: دخل {owner} وانهارت المملكة.',
-  'المدرب رسم الخطة، {owner} أكل الورقة والخطة سوا.',
-  'هاي النتيجة بدها ولي أمر وتوقيع وتعهد بعدم التكرار.',
-  'المنافس ما ربح؛ {owner} هو اللي سلّمه الفوز مغلف.',
-  'الورق عم يطالب بحقوقه بعد سوء الاستخدام.',
-  'حالة طوارئ: الشريك اكتشف متأخر إنه شريك الكارثة.',
-  'دقيقة صمت على النقاط اللي راحت وما رح ترجع.',
-  'الحي كله سمع صوت انهيار المملكة.',
-  'اتصلوا بالدفاع المدني، في فهم محشور تحت النتيجة.',
-  'حتى الخصم صار ينصحه من كتر الشفقة.',
-  'خطة {owner}: نبلش سيئين وبعدين نصير أسوأ.',
-  'تم سحب رخصة اللعب حتى إشعار آخر.',
-  'يا {partner} إذا بدك تغيّر شريك هلق أحسن وقت.',
-  'المملكة انباعت خردة بعد هالنتيجة.',
-  'المحاسب رفض يسجل الرقم وقال هاد مو منطقي.',
-  'دورة تدريبية عاجلة بعنوان: كيف لا تعمل متل {owner}.',
-  'المخرج صنّف الجولة رعب، كوميديا، وكارثة بنفس الوقت.',
-  'آخر خبر: {team} عم يدور على زر تراجع بالحياة.',
-  'المعنويات بخير، أما النقاط فالله يرحمها.',
-  'وصل كتاب رسمي: ممنوع {owner} يقرب عالورق لحاله.'
+  { id: 'positive', minScore: 1, partnership: 'الملك {owner} ..حجي قوم مد الغالي بالقعدة خلي الشباب تاخد الرضا', solo: 'الملك {owner} ..حجي قوم مد الغالي بالقعدة خلي الشباب تاخد الرضا' },
+  { id: '0-to-50', minScore: -50, maxScore: 0, partnership: 'عاااااش يا وحش الـ{absScore} ولا شي', solo: 'عاااااش يا وحش الـ{absScore} ولا شي' },
+  { id: '51-to-100', minScore: -100, maxScore: -51, partnership: 'حلوة ودليل على فهم {owner}', solo: 'حلوة ودليل على فهم {owner}' },
+  { id: '101-to-200', minScore: -200, maxScore: -101, partnership: 'لا بأس حجي لا بأس مقبولة نوعاً ما', solo: 'خراي على هالمخ شو حمار' },
+  { id: '201-to-249', minScore: -249, maxScore: -201, partnership: 'شو الترتيب يابا شو هالنتيجة الخرا', solo: 'شو الترتيب يابا شو هالنتيجة الخرا' },
+  { id: 'exact-250', minScore: -250, maxScore: -250, partnership: 'يلا انقسمت بيناتنا', solo: 'اكلت نص الشدة قوم انقلع ع بيتكن' },
+  { id: '251-to-300', minScore: -300, maxScore: -251, partnership: 'شو هاد حمار سبحان مين حجبك عن أكل التبن', solo: 'شو هاد حمار سبحان مين حجبك عن أكل التبن' },
+  { id: '301-to-350', minScore: -350, maxScore: -301, partnership: 'خراي عليك وعالشدة وعاللي مسكك ورق شدة وقلك بتفهم تلعب', solo: 'خراي عليك وعالشدة وعاللي مسكك ورق شدة وقلك بتفهم تلعب' },
+  { id: '351-to-400', minScore: -400, maxScore: -351, partnership: 'قوم ع بيتكن ايري فيك وباللي اتصل فيك وعزمك عالقعدة يلا حجي يلا ع بيتكن', solo: 'قوم ع بيتكن ايري فيك وباللي اتصل فيك وعزمك عالقعدة يلا حجي يلا ع بيتكن' },
+  { id: '401-to-450', minScore: -450, maxScore: -401, partnership: 'شوووووو هاللعب المأير هاد ع شوي رح توصل لمستوى منذر طبانة بالبهم', solo: 'شوووووو هاللعب المأير هاد ع شوي رح توصل لمستوى منذر طبانة بالبهم' },
+  { id: '451-to-499', minScore: -499, maxScore: -451, partnership: 'اووووووووووووه لعب كلاب هاد مو لعب بني آدمين ...شو يا {owner} مو حاسس حالك حمار ...تريك ورق هالشدة وقوم شوف مستقبلك بغير مكان', solo: 'اووووووووووووه لعب كلاب هاد مو لعب بني آدمين ...شو يا {owner} مو حاسس حالك حمار ...تريك ورق هالشدة وقوم شوف مستقبلك بغير مكان' },
+  { id: '500-or-less', maxScore: -500, partnership: 'يا جماعة واضحة ......خلونا نقوم نعمل فرشاية لـ {owner} .....طيزو محجوزة لأبو عمر شفلك مكان تاني وغزو منو', solo: 'يا جماعة واضحة ......خلونا نقوم نعمل فرشاية لـ {owner} .....طيزو محجوزة لأبو عمر شفلك مكان تاني وغزو منو' }
 ];
 
 const trixDefaults: Array<[number, number, string]> = [
@@ -97,33 +27,6 @@ const trixDefaults: Array<[number, number, string]> = [
   [150, 200, 'جوني سنس وشريكو'], [150, 100, 'يلا مقبولة'], [150, 50, 'كس اخت هالتسماية'],
   [100, 200, 'ولله يا {owner} شريكك أفهم منك'], [100, 150, 'يلا مقبولة'], [100, 50, 'ورق خرا وشراكة ع أخرا'],
   [50, 200, 'معلم {partner} الله يعينك على هالحمار'], [50, 150, 'شو هالحمير اللي عم تلعب هي قوموا خرايي عليكن وعالشدة'], [50, 100, 'شو هالحمير اللي عم تلعب هي قوموا خرايي عليكن وعالشدة']
-];
-
-const trixAlternatives = [
-  '{owner} و{partner} دخلوا السباق وتركوا الباقي يعدّ الغبرة.',
-  'الشراكة اليوم يا ذهب يا خردة، والنتيجة حكت لحالها.',
-  'المعلّق: صاحب المملكة {owner} وشريكه {partner} عاملين فيلم كامل.',
-  'تقرير التركس: واحد شال الفريق والثاني شال همّه.',
-  'يا {team} هالتسماية بدها تصفيق ولا لجنة تحقيق؟',
-  'الترتيب كشف كل شي؛ ما عاد في مجال للحكي الفاضي.',
-  'واحد وصل بكير والثاني كان عم يسأل وين الطريق.',
-  'اجتماع الشراكة بعد الجولة: مين يشكر مين ومين يعتذر لمين؟',
-  'خبر عاجل من خط النهاية: {owner} وصل و{partner} لحقه عالقد.',
-  'هاي الشراكة بدها كأس إذا نجحت ومحامي إذا كملت هيك.',
-  'الخصوم عم يراجعوا الفيديو، واللقطة واضحة بلا VAR.',
-  'الورق أعطى حكمه: في معلم وفي واحد عم يتعلّم.',
-  'تركس اليوم كشف مين بيسوق ومين راكب بالبكم.',
-  'النتيجة انكتبت، والعتب صار محفوظ لجلسة ما بعد المباراة.',
-  'يا صاحب المملكة، شريكك عم يطلع عليك نظرة فيها ألف سؤال.',
-  'الخط النهائي استقبل أربعة، بس مو كلهم وصلوا بكرامتهم.',
-  'مسرح التركس قدّم عرض شراكة ما بين البطولة والمصيبة.',
-  'التسماية خلصت؛ هلأ بلش توزيع المسؤوليات والفضايح.',
-  'إذا هاي خطة مشتركة، لازم نعرف مين وافق عليها.',
-  'التقرير النهائي: {owner} {score} وشريكه حاضر بالقصة كلها.',
-  'صفقوا للفريق أو عزّوه، حسب اللي فهمتوه من الترتيب.',
-  'الشريك الأفضل واضح، بس خلونا ساكتين كرمال المحبة.',
-  'التركس ما بيكذب؛ المراكز فضحت الإدارة كاملة.',
-  'اليوم الشراكة اجت بنكهة أكشن وكوميديا سوداء.'
 ];
 
 const oldManPools: Array<{ group: string; event: MessageRule['event']; doubled?: boolean; duration: number; required: string; alternatives: string[] }> = [
@@ -146,24 +49,19 @@ function repeatPool(required: string, alternatives: string[], count: number): st
 }
 
 function createLashRules(): MessageRule[] {
-  return LASH_BANDS.flatMap((band) => {
-    const source = band.intensity <= 1 ? goodRoasts : badRoasts;
-    const templates = repeatPool(band.required, source, band.count);
-    return (['fast-lash', 'cc-lash'] as const).flatMap((category) => templates.map((template, index): MessageRule => ({
-      id: `${category}-${band.id}-${index + 1}`, factoryId: `${category}-${band.id}-${index + 1}`, alternativeGroupId: `${category}-${band.id}`,
-      category, gameTypes: category === 'fast-lash' ? ['trix-fast'] : ['cc'], event: 'lash-owner-score', minScore: band.minScore, maxScore: band.maxScore,
-      template, durationMs: 5000, enabled: true, priority: 20, intensity: index === 0 ? band.intensity : Math.min(4, (index % 4) + 1) as 1 | 2 | 3 | 4,
-      createdAt: now, updatedAt: now
-    })));
-  });
+  return (['fast-lash', 'cc-lash'] as const).flatMap((category) => (['partnership', 'solo'] as const).flatMap((trixMode) => LASH_BANDS.map((band): MessageRule => ({
+    id: `${category}-${trixMode}-${band.id}`, factoryId: `${category}-${trixMode}-${band.id}`, alternativeGroupId: `${category}-${trixMode}-${band.id}`,
+    category, gameTypes: category === 'fast-lash' ? ['trix-fast'] : ['cc'], event: 'lash-owner-score', trixMode, minScore: band.minScore, maxScore: band.maxScore,
+    template: band[trixMode], durationMs: 5000, enabled: true, priority: 20, intensity: 1, createdAt: now, updatedAt: now
+  }))));
 }
 
 function createTrixRules(): MessageRule[] {
-  return trixDefaults.flatMap(([ownerScore, partnerScore, required]) => repeatPool(required, trixAlternatives, 18).map((template, index): MessageRule => ({
-    id: `fast-trix-${ownerScore}-${partnerScore}-${index + 1}`, factoryId: `fast-trix-${ownerScore}-${partnerScore}-${index + 1}`, alternativeGroupId: `fast-trix-${ownerScore}-${partnerScore}`,
-    category: 'fast-trix', gameTypes: ['trix-fast'], event: 'trix-partnership', ownerScore, partnerScore, template, durationMs: 5000, enabled: true, priority: 30,
-    intensity: Math.min(4, (index % 4) + 1) as 1 | 2 | 3 | 4, createdAt: now, updatedAt: now
-  })));
+  return trixDefaults.map(([ownerScore, partnerScore, template]): MessageRule => ({
+    id: `fast-trix-${ownerScore}-${partnerScore}`, factoryId: `fast-trix-${ownerScore}-${partnerScore}`, alternativeGroupId: `fast-trix-${ownerScore}-${partnerScore}`,
+    category: 'fast-trix', gameTypes: ['trix-fast'], event: 'trix-partnership', trixMode: 'partnership', ownerScore, partnerScore, template, durationMs: 5000, enabled: true, priority: 30,
+    intensity: 1, createdAt: now, updatedAt: now
+  }));
 }
 
 function createOldManRules(): MessageRule[] {
@@ -216,7 +114,7 @@ export function interpolateTemplate(template: string, values: TemplateValues): s
 
 export function matchingMessages(rules: MessageRule[], context: MessageContext, event: MessageRule['event']): MessageRule[] {
   const intensity = context.intensity ?? 4;
-  return rules.filter((rule) => rule.enabled && rule.event === event && rule.gameTypes.includes(context.game.gameType) && (rule.intensity ?? 1) <= intensity &&
+  return rules.filter((rule) => rule.enabled && rule.event === event && rule.gameTypes.includes(context.game.gameType) && (!rule.trixMode || rule.trixMode === context.game.trixMode) && (rule.intensity ?? 1) <= intensity &&
     (rule.minScore === undefined || (context.ownerScore ?? 0) >= rule.minScore) && (rule.maxScore === undefined || (context.ownerScore ?? 0) <= rule.maxScore) &&
     (rule.ownerScore === undefined || rule.ownerScore === context.ownerScore) && (rule.partnerScore === undefined || rule.partnerScore === context.partnerScore) &&
     (rule.doubled === undefined || rule.doubled === context.doubled) && (rule.minOccurrences === undefined || (context.occurrences ?? 0) >= rule.minOccurrences));

@@ -33,3 +33,9 @@ export const CONTRACT_LABELS: Record<TrixContract, string> = {
   trix: 'تركس',
   complex: 'كومبلكس'
 };
+
+export function partnershipContractTotal(contract: TrixContract, rules: TrixRules): number | undefined {
+  if (contract === 'diamonds') return rules.diamondCount;
+  if (contract === 'tricks') return rules.trickCount;
+  return undefined;
+}

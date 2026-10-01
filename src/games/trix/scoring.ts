@@ -40,6 +40,12 @@ export function aggregatePartnershipScores(playerDelta: Record<string, number>, 
   return Object.fromEntries(teams.map((team) => [team.id, team.playerIds.reduce((sum, id) => sum + (playerDelta[id] ?? 0), 0)]));
 }
 
+export function complementaryTeamCounts(enteredTeamId: string, enteredCount: number, contractTotal: number, teams: GameTeam[]): Record<string, number> {
+  const otherTeam = teams.find((team) => team.id !== enteredTeamId);
+  if (!otherTeam) throw new Error('الفريق المقابل غير موجود');
+  return { [enteredTeamId]: enteredCount, [otherTeam.id]: contractTotal - enteredCount };
+}
+
 export function validatePartnershipKingdomBalance(deltas: Record<string, number>[], teams: GameTeam[]) {
   return deltas.reduce((total, delta) => total + sumScoreDelta(aggregatePartnershipScores(delta, teams)), 0) === 0;
 }
