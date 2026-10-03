@@ -3,7 +3,7 @@ import { aggregatePartnershipScores, calculateTrixRound, validateKingdomBalance,
 import { DEFAULT_TRIX_RULES, FAST_CONTRACTS, SLOW_CONTRACTS } from '../games/trix/rules';
 import { createUnconfirmedTarneebRules } from '../games/tarneeb/rules';
 import { calculateTarneeb41Round, calculateTarneeb61Round, deriveTarneeb41Phase, determineTarneeb41Winner, determineTarneebWinner } from '../games/tarneeb/scoring';
-import type { AppSettings, BackupFile, ContentOverride, GameRound, GameSession, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
+import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleFiring, ContentOverride, GameRound, GameSession, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
 import { isTrix, uid } from '../utils';
 import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashInput } from '../games/fast/scoring';
 import type { LashRoundInput, MessageRule, TrixRankingInput } from '../types';
@@ -16,6 +16,8 @@ class KokDatabase extends Dexie {
   presets!: EntityTable<RulePreset, 'id'>;
   messageRules!: EntityTable<MessageRule, 'id'>;
   contentOverrides!: EntityTable<ContentOverride, 'id'>;
+  conditionalRules!: EntityTable<ConditionalReactionRule, 'id'>;
+  conditionalRuleFirings!: EntityTable<ConditionalRuleFiring, 'id'>;
 
   constructor() {
     // الاسم الداخلي القديم محفوظ عمداً كي لا تضيع بيانات مستخدمي V1.
@@ -58,6 +60,12 @@ class KokDatabase extends Dexie {
         }
         if (nextId && nextId !== rule.id) { await table.delete(rule.id); await table.put({ ...rule, id: nextId, factoryId: nextId }); }
       }
+    });
+    this.version(5).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event',
+      contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
+      conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt'
     });
   }
 }
@@ -264,18 +272,20 @@ export async function replaceRound(roundId: string, updates: Pick<GameRound, 'in
 }
 
 export async function undoLastRound(gameId: string) {
-  return db.transaction('rw', db.games, db.rounds, db.settings, async () => {
+  return db.transaction('rw', db.games, db.rounds, db.settings, db.conditionalRuleFirings, async () => {
     const rounds = await db.rounds.where('gameId').equals(gameId).sortBy('index');
     const last = rounds.at(-1);
     if (!last) return;
     await db.rounds.delete(last.id);
+    await db.conditionalRuleFirings.where('gameId').equals(gameId).filter((firing) => firing.roundIndex >= last.index).delete();
     await recomputeGameInTransaction(gameId);
   });
 }
 
 export async function deleteGame(gameId: string) {
-  await db.transaction('rw', db.games, db.rounds, db.settings, async () => {
+  await db.transaction('rw', db.games, db.rounds, db.settings, db.conditionalRuleFirings, async () => {
     await db.rounds.where('gameId').equals(gameId).delete();
+    await db.conditionalRuleFirings.where('gameId').equals(gameId).delete();
     await db.games.delete(gameId);
     const settings = await db.settings.get('main');
     if (settings?.lastActiveGameId === gameId) await db.settings.update('main', { lastActiveGameId: undefined });
@@ -283,14 +293,14 @@ export async function deleteGame(gameId: string) {
 }
 
 export async function exportBackup(): Promise<BackupFile> {
-  const [games, rounds, players, presets, settings, messageRules, contentOverrides] = await Promise.all([db.games.toArray(), db.rounds.toArray(), db.players.toArray(), db.presets.toArray(), db.settings.toArray(), db.messageRules.toArray(), db.contentOverrides.toArray()]);
-  return { app: 'KOK', version: 3, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings, messageRules, contentOverrides } };
+  const [games, rounds, players, presets, settings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings] = await Promise.all([db.games.toArray(), db.rounds.toArray(), db.players.toArray(), db.presets.toArray(), db.settings.toArray(), db.messageRules.toArray(), db.contentOverrides.toArray(), db.conditionalRules.toArray(), db.conditionalRuleFirings.toArray()]);
+  return { app: 'KOK', version: 4, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings } };
 }
 
 export function isValidBackup(value: unknown): value is BackupFile {
   if (!value || typeof value !== 'object') return false;
   const backup = value as Partial<BackupFile>;
-  if (!((backup.app === 'Lammatna' || backup.app === 'KOK') && (backup.version === 1 || backup.version === 2 || backup.version === 3) && backup.data &&
+  if (!((backup.app === 'Lammatna' || backup.app === 'KOK') && (backup.version === 1 || backup.version === 2 || backup.version === 3 || backup.version === 4) && backup.data &&
     ['games', 'rounds', 'players', 'presets', 'settings'].every((key) => Array.isArray((backup.data as unknown as Record<string, unknown>)[key])))) return false;
   return backup.data.games.every((item) => typeof item?.id === 'string' && typeof item?.gameType === 'string' && Array.isArray(item?.players)) &&
     backup.data.rounds.every((item) => typeof item?.id === 'string' && typeof item?.gameId === 'string' && Number.isInteger(item?.index)) &&
@@ -299,8 +309,8 @@ export function isValidBackup(value: unknown): value is BackupFile {
 }
 
 export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace') {
-  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides], async () => {
-    if (mode === 'replace') await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear()]);
+  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides, db.conditionalRules, db.conditionalRuleFirings], async () => {
+    if (mode === 'replace') await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear(), db.conditionalRules.clear(), db.conditionalRuleFirings.clear()]);
     await db.games.bulkPut(backup.data.games);
     await db.rounds.bulkPut(backup.data.rounds);
     if (mode === 'replace') await db.players.bulkPut(backup.data.players);
@@ -313,13 +323,15 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
     await db.settings.bulkPut(backup.data.settings);
     if (backup.data.messageRules?.length) await db.messageRules.bulkPut(backup.data.messageRules);
     if (backup.data.contentOverrides?.length) await db.contentOverrides.bulkPut(backup.data.contentOverrides);
+    if (backup.data.conditionalRules?.length) await db.conditionalRules.bulkPut(backup.data.conditionalRules);
+    if (backup.data.conditionalRuleFirings?.length) await db.conditionalRuleFirings.bulkPut(backup.data.conditionalRuleFirings);
   });
   await initializeDatabase();
 }
 
 export async function clearAllData() {
-  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides], async () => {
-    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear()]);
+  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides, db.conditionalRules, db.conditionalRuleFirings], async () => {
+    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear(), db.conditionalRules.clear(), db.conditionalRuleFirings.clear()]);
   });
   await initializeDatabase();
 }

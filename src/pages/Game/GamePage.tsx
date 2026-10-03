@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowRight, Check, History, Home, MoreVertical, Pencil, RotateCcw, Trophy, Undo2 } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../../components/common/Button';
 import { Modal } from '../../components/common/Modal';
@@ -18,8 +18,11 @@ import { aggregatePartnershipScores } from '../../games/trix/scoring';
 import { buildTarneeb61Attempts } from '../../games/tarneeb/analytics';
 import { getContextualTarneeb61Reaction, type Tarneeb61Reaction as Tarneeb61ReactionData } from '../../games/tarneeb/reactions';
 import type { TarneebRoundResult } from '../../games/tarneeb/scoring';
+import { buildTarneebConditionalContext } from '../../games/reactions/contexts';
+import { indexConditionalRules, selectConditionalReaction } from '../../games/reactions/conditionalRules';
+import { interpolateTemplate } from '../../games/fast/messages';
 import { useGame } from '../../hooks/useGame';
-import type { GameRound, GameSession, ManualAdjustmentInput, Tarneeb41RoundInput, TarneebRoundInput, TrixContract, TrixRoundInput, TrixRules } from '../../types';
+import type { ConditionalRuleFiring, GameRound, GameSession, ManualAdjustmentInput, Tarneeb41RoundInput, TarneebRoundInput, TrixContract, TrixRoundInput, TrixRules } from '../../types';
 import { formatDuration, GAME_LABELS, isTrix, scoreText, uid } from '../../utils';
 
 const LazyFastGamePanel = lazy(() => import('../../components/fast/FastGamePanel').then((module) => ({ default: module.FastGamePanel })));
@@ -31,6 +34,9 @@ export function GamePage() {
   const navigate = useNavigate();
   const toast = useToast();
   const settings = useLiveQuery(() => db.settings.get('main'));
+  const conditionalRules = useLiveQuery(() => db.conditionalRules.toArray(), [], []);
+  const conditionalFirings = useLiveQuery(() => gameId ? db.conditionalRuleFirings.where('gameId').equals(gameId).toArray() : Promise.resolve<ConditionalRuleFiring[]>([]), [gameId], []);
+  const conditionalRuleIndex = useMemo(() => indexConditionalRules(conditionalRules), [conditionalRules]);
   const [selectedContract, setSelectedContract] = useState<TrixContract>();
   const [undoOpen, setUndoOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -71,16 +77,22 @@ export function GamePage() {
         const previousId = lastReactionByPlayer.current.get(input.bidderId);
         const attempts = buildTarneeb61Attempts(game, [...rounds, savedRound]);
         let nextReaction = getContextualTarneeb61Reaction({ playerId: input.bidderId, bid: input.bid, actualTricks, contractSucceeded: result.contractSucceeded }, attempts, previousId);
+        const conditionalContext = buildTarneebConditionalContext(game, savedRound, input, result, attempts, settings?.roastIntensity ?? 4);
+        const conditional = selectConditionalReaction(conditionalRuleIndex.get('tarneeb-61:tarneeb') ?? [], conditionalContext, conditionalFirings);
         const { effectiveMessageRules, pickMessage, readRecentMessageIds, rememberMessageId } = await import('../../games/fast/messages');
         const effective = effectiveMessageRules(await db.messageRules.toArray());
         const special = ['kaboot', 'broken-seven', 'second-kaboot', 'success-streak-3', 'success-streak-5', 'failure-streak-3'].includes(nextReaction.id);
         const candidates = special
           ? effective.filter((rule) => rule.enabled && rule.category === 'tarneeb-special' && rule.factoryId === nextReaction.id)
           : effective.filter((rule) => rule.enabled && rule.category === (result.contractSucceeded ? 'tarneeb-success' : 'tarneeb-failure'));
-        const custom = pickMessage(candidates, [...readRecentMessageIds(), previousId ?? '']);
-        if (custom) {
-          rememberMessageId(custom.id);
-          nextReaction = { ...nextReaction, id: custom.id, message: custom.template, durationMs: custom.durationMs };
+        const factoryOverride = pickMessage(candidates, [...readRecentMessageIds(), previousId ?? '']);
+        if (conditional && (conditional.rule.exclusive || !special)) {
+          const firedAt = new Date().toISOString();
+          await db.conditionalRuleFirings.add({ id: uid(), ruleId: conditional.rule.id, gameId: game.id, event: 'tarneeb', alternativeId: conditional.alternative.id, roundIndex: savedRound.index, firedAt });
+          nextReaction = { ...nextReaction, id: conditional.alternative.id, message: interpolateTemplate(conditional.alternative.text, conditionalContext.placeholders), durationMs: conditional.rule.durationMs };
+        } else if (factoryOverride) {
+          rememberMessageId(factoryOverride.id, factoryOverride.template);
+          nextReaction = { ...nextReaction, id: factoryOverride.id, message: factoryOverride.template, durationMs: factoryOverride.durationMs };
         }
         lastReactionByPlayer.current.set(input.bidderId, nextReaction.id);
         setReaction({ ...nextReaction, occurrence: savedRound.index });

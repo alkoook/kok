@@ -32,11 +32,11 @@ describe('رسائل اللعب الحية canonical', () => {
     for (const [ownerScore, partnerScore, expected] of trixMatrix) expect(matchingMessages(rules, { game: game('trix-fast', 'partnership'), owner, ownerScore, partnerScore }, 'trix-partnership').map((rule) => rule.template)).toEqual([expected]);
     expect(rules.filter((rule) => rule.event === 'trix-partnership')).toHaveLength(12);
   });
-  it('يبقي حوض الختيار الإبداعي مع العبارتين الإجباريتين ومدتهما', () => {
+  it('يشغّل مصنع الختيار الجديد فقط', () => {
     const oldMan = rules.filter((rule) => rule.category === 'old-man');
-    expect(oldMan).toHaveLength(120);
-    expect(oldMan).toContainEqual(expect.objectContaining({ template: 'ملط الختيار ملط يلحس ايري', durationMs: 5000 }));
-    expect(oldMan).toContainEqual(expect.objectContaining({ template: 'ولد راح لعند أبوه وقلو ...بابا ناكوني بالحارة ....قلو الأب أسهل ما تاكل الختيار مدبل بمملكتك متل هالحمار {owner}', durationMs: 10000 }));
+    expect(oldMan).toHaveLength(390);
+    expect(oldMan.every((message) => message.id.startsWith('old-man-v2-'))).toBe(true);
+    expect(oldMan.some((message) => message.template.includes('ولد راح لعند أبوه'))).toBe(false);
   });
   it('يحتفظ بعشرة نجاحات و16 فشلًا وخمس إضافات طرنيب', () => { expect(rules.filter((rule) => /^success-\d+$/.test(rule.id))).toHaveLength(10); expect(rules.filter((rule) => /^failure-\d+$/.test(rule.id))).toHaveLength(16); expect(rules.filter((rule) => /^failure-private-\d+$/.test(rule.id))).toHaveLength(5); expect(['kaboot', 'broken-seven', 'second-kaboot', 'success-streak-3', 'success-streak-5', 'failure-streak-3'].every((id) => rules.some((rule) => rule.id === id))).toBe(true); });
   it('يستبدل القيم المعروفة ويبقي المجهولة بأمان', () => expect(interpolateTemplate('{owner} {absScore} {unknown}', { owner: 'أحمد', absScore: 250 })).toBe('أحمد 250 {unknown}'));

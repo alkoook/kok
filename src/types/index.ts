@@ -193,7 +193,7 @@ export type AppSettings = {
 };
 
 export type MessageCategory = 'fast-lash' | 'fast-trix' | 'old-man' | 'tarneeb-success' | 'tarneeb-failure' | 'tarneeb-special' | 'cc-lash';
-export type MessageEvent = 'lash-owner-score' | 'trix-partnership' | 'old-man-owner' | 'old-man-partner' | 'old-man-opponent' | 'tarneeb-success' | 'tarneeb-failure' | 'tarneeb-special';
+export type MessageEvent = 'lash-owner-score' | 'trix-partnership' | 'old-man' | 'old-man-owner' | 'old-man-partner' | 'old-man-opponent' | 'tarneeb-success' | 'tarneeb-failure' | 'tarneeb-special';
 export type MessageRule = {
   id: string;
   factoryId: string;
@@ -212,10 +212,56 @@ export type MessageRule = {
   enabled: boolean;
   priority: number;
   intensity?: 1 | 2 | 3 | 4;
+  oldManCategory?: 'normal' | 'doubled' | 'owner' | 'owner-doubled' | 'partner' | 'opponent' | 'repeat' | 'repeat-doubled' | 'magnet' | 'historical';
+  historicalRecord?: boolean;
   alternativeGroupId?: string;
   userAdded?: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ConditionalRuleGame = 'trix-fast' | 'cc' | 'tarneeb-61';
+export type ConditionalRuleEvent = 'lash' | 'trix' | 'old-man' | 'tarneeb';
+export type ConditionalOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'between';
+export type ConditionalField =
+  | 'gameMode' | 'kingdomNumber' | 'ownerProfileId' | 'ownerTeamProfileId' | 'opponentTeamProfileId'
+  | 'enteredTeamScore' | 'ownerTeamScore' | 'opponentTeamScore' | 'soloPlayerScore'
+  | 'ownerPosition' | 'partnerPosition' | 'targetPlayerPosition' | 'ownerTrixPoints' | 'partnerTrixPoints' | 'teamTrixTotal'
+  | 'ownerAheadPartner' | 'partnerAheadOwner' | 'ownerFirst' | 'ownerLast' | 'partnerFirst' | 'partnerLast' | 'pairCombination'
+  | 'oldManRole' | 'oldManDoubled' | 'ownerAteOldMan' | 'ownerAteDoubledOldMan' | 'playerAteOwnKingdom'
+  | 'oldManCount' | 'doubledOldManCount' | 'targetProfileId' | 'historicalOldManRecord'
+  | 'badLashStreak' | 'goodLashStreak' | 'trixFirstStreak' | 'trixFourthStreak'
+  | 'bid' | 'actualTricks' | 'succeeded' | 'failed' | 'isKaboot' | 'brokenSeven'
+  | 'failureStreak' | 'successStreak' | 'kabootCount' | 'currentTeamScore' | 'opponentScore' | 'matchTarget' | 'remainingToTarget';
+export type ConditionalValue = string | number | boolean;
+export type ConditionalRuleCondition = { id: string; field: ConditionalField; operator: ConditionalOperator; value: ConditionalValue; valueTo?: number };
+export type ConditionalMessageAlternative = { id: string; text: string; enabled: boolean };
+export type ConditionalReactionRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  game: ConditionalRuleGame;
+  event: ConditionalRuleEvent;
+  conditions: ConditionalRuleCondition[];
+  messages: ConditionalMessageAlternative[];
+  durationMs: number;
+  priority: number;
+  exclusive: boolean;
+  oncePerMatch: boolean;
+  cooldownRounds: number;
+  intensity?: 1 | 2 | 3 | 4;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+};
+export type ConditionalRuleFiring = {
+  id: string;
+  ruleId: string;
+  gameId: string;
+  event: ConditionalRuleEvent;
+  alternativeId: string;
+  roundIndex: number;
+  firedAt: string;
 };
 
 export type SummarySegmentCategory =
@@ -245,7 +291,7 @@ export type RulePreset = {
 
 export type BackupFile = {
   app: 'Lammatna' | 'KOK';
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   exportedAt: string;
   data: {
     games: GameSession[];
@@ -255,5 +301,7 @@ export type BackupFile = {
     settings: AppSettings[];
     messageRules?: MessageRule[];
     contentOverrides?: ContentOverride[];
+    conditionalRules?: ConditionalReactionRule[];
+    conditionalRuleFirings?: ConditionalRuleFiring[];
   };
 };
