@@ -24,6 +24,8 @@ import { interpolateTemplate } from '../../games/fast/messages';
 import { useGame } from '../../hooks/useGame';
 import type { ConditionalRuleFiring, GameRound, GameSession, ManualAdjustmentInput, Tarneeb41RoundInput, TarneebRoundInput, TrixContract, TrixRoundInput, TrixRules } from '../../types';
 import { formatDuration, GAME_LABELS, isTrix, scoreText, uid } from '../../utils';
+import { audioEngine } from '../../audio/audioEngine';
+import type { AudioEvent } from '../../audio/types';
 
 const LazyFastGamePanel = lazy(() => import('../../components/fast/FastGamePanel').then((module) => ({ default: module.FastGamePanel })));
 const FastGamePanel = (props: { game: GameSession; rounds: GameRound[] }) => <Suspense fallback={<div className="mx-4 mt-4 surface h-80 animate-pulse"/>}><LazyFastGamePanel {...props}/></Suspense>;
@@ -63,20 +65,21 @@ export function GamePage() {
 
   const saveTrix = async (input: TrixRoundInput, delta: Record<string, number>, kingdomIndex: number, ownerId: string) => {
     if (editRound) { await replaceRound(editRound.id, { input, scoreDelta: delta, type: input.contract, note: editRound.note }); setEditRound(undefined); toast('تم تعديل الجولة وإعادة الحساب'); }
-    else { await addRound({ gameId: game.id, type: input.contract, kingdomIndex, kingdomOwnerId: ownerId, input, scoreDelta: delta }); saveFeedback(); }
+    else { await addRound({ gameId: game.id, type: input.contract, kingdomIndex, kingdomOwnerId: ownerId, input, scoreDelta: delta }); const updated = await db.games.get(game.id); const contractsPerKingdom = game.gameType === 'trix-slow' ? SLOW_CONTRACTS.length : FAST_CONTRACTS.length; const completedKingdom = (rounds.filter((round) => round.type !== 'manual-adjustment').length + 1) % contractsPerKingdom === 0; if (updated?.status === 'completed') void audioEngine.playEvent('match-complete'); else if (completedKingdom) void audioEngine.playEvent('kingdom-complete'); else if (input.contract === 'trix') { const position = input.order.indexOf(ownerId) + 1; void audioEngine.playEvent(position === 1 ? 'trix-first' : position === 4 ? 'trix-last' : 'round-saved'); } else void audioEngine.playEvent('round-saved'); saveFeedback(); }
   };
   const saveTarneeb = async (input: TarneebRoundInput, delta: Record<string, number>, result: TarneebRoundResult) => {
     if (editRound) { await replaceRound(editRound.id, { input, scoreDelta: delta, type: 'tarneeb', note: input.note }); setEditRound(undefined); toast('تم تعديل الجولة وإعادة الحساب'); }
     else {
       const savedRound = await addRound({ gameId: game.id, type: 'tarneeb', input, scoreDelta: delta, note: input.note });
       if (settings?.vibration) navigator.vibrate?.(18);
-      if (game.rulesSnapshot.kind === 'tarneeb-61-v2' && game.teams && settings?.roundReactions !== false) {
+      if (game.rulesSnapshot.kind === 'tarneeb-61-v2' && game.teams) {
         const actualTricks = input.bidderTeamId === game.teams[0].id ? input.teamOneTricks : 13 - input.teamOneTricks;
         if (lastReactionRoundId.current === savedRound.id) return;
         lastReactionRoundId.current = savedRound.id;
         const previousId = lastReactionByPlayer.current.get(input.bidderId);
         const attempts = buildTarneeb61Attempts(game, [...rounds, savedRound]);
         let nextReaction = getContextualTarneeb61Reaction({ playerId: input.bidderId, bid: input.bid, actualTricks, contractSucceeded: result.contractSucceeded }, attempts, previousId);
+        const semanticReactionId = nextReaction.id;
         const conditionalContext = buildTarneebConditionalContext(game, savedRound, input, result, attempts, settings?.roastIntensity ?? 4);
         const conditional = selectConditionalReaction(conditionalRuleIndex.get('tarneeb-61:tarneeb') ?? [], conditionalContext, conditionalFirings);
         const { effectiveMessageRules, pickMessage, readRecentMessageIds, rememberMessageId } = await import('../../games/fast/messages');
@@ -86,22 +89,26 @@ export function GamePage() {
           ? effective.filter((rule) => rule.enabled && rule.category === 'tarneeb-special' && rule.factoryId === nextReaction.id)
           : effective.filter((rule) => rule.enabled && rule.category === (result.contractSucceeded ? 'tarneeb-success' : 'tarneeb-failure'));
         const factoryOverride = pickMessage(candidates, [...readRecentMessageIds(), previousId ?? '']);
-        if (conditional && (conditional.rule.exclusive || !special)) {
+        const selectedConditional = conditional && (conditional.rule.exclusive || !special) ? conditional : undefined;
+        if (selectedConditional) {
           const firedAt = new Date().toISOString();
-          await db.conditionalRuleFirings.add({ id: uid(), ruleId: conditional.rule.id, gameId: game.id, event: 'tarneeb', alternativeId: conditional.alternative.id, roundIndex: savedRound.index, firedAt });
-          nextReaction = { ...nextReaction, id: conditional.alternative.id, message: interpolateTemplate(conditional.alternative.text, conditionalContext.placeholders), durationMs: conditional.rule.durationMs };
+          await db.conditionalRuleFirings.add({ id: uid(), ruleId: selectedConditional.rule.id, gameId: game.id, event: 'tarneeb', alternativeId: selectedConditional.alternative.id, roundIndex: savedRound.index, firedAt });
+          nextReaction = { ...nextReaction, id: selectedConditional.alternative.id, message: interpolateTemplate(selectedConditional.alternative.text, conditionalContext.placeholders), durationMs: selectedConditional.rule.durationMs };
         } else if (factoryOverride) {
           rememberMessageId(factoryOverride.id, factoryOverride.template);
           nextReaction = { ...nextReaction, id: factoryOverride.id, message: factoryOverride.template, durationMs: factoryOverride.durationMs };
         }
+        const updated = await db.games.get(game.id);
+        const audioEvent: AudioEvent = updated?.status === 'completed' ? 'match-complete' : semanticReactionId === 'broken-seven' ? 'broken-seven' : semanticReactionId === 'second-kaboot' ? 'second-kaboot' : nextReaction.variant === 'kaboot' ? 'kaboot' : semanticReactionId.startsWith('success-streak') ? 'success-streak' : semanticReactionId === 'failure-streak-3' ? 'failure-streak' : result.contractSucceeded ? 'contract-success' : 'contract-failure';
+        void audioEngine.playReaction({ event: audioEvent, message: nextReaction.message, mode: selectedConditional?.rule.audioPlaybackMode, assetId: selectedConditional?.rule.audioAssetId });
         lastReactionByPlayer.current.set(input.bidderId, nextReaction.id);
-        setReaction({ ...nextReaction, occurrence: savedRound.index });
+        if (settings?.roundReactions !== false) setReaction({ ...nextReaction, occurrence: savedRound.index });
       } else toast('تم تسجيل الجولة');
     }
   };
   const saveTarneeb41 = async (input: Tarneeb41RoundInput, delta: Record<string, number>) => {
     if (editRound) { await replaceRound(editRound.id, { input, scoreDelta: delta, type: 'tarneeb-41', note: editRound.note }); setEditRound(undefined); toast('تم تعديل الجولة وإعادة بناء المراحل'); }
-    else { await addRound({ gameId: game.id, type: 'tarneeb-41', input, scoreDelta: delta }); saveFeedback(); }
+    else { await addRound({ gameId: game.id, type: 'tarneeb-41', input, scoreDelta: delta }); const updated = await db.games.get(game.id); void audioEngine.playEvent(updated?.status === 'completed' ? 'match-complete' : 'round-saved'); saveFeedback(); }
   };
 
   return <main className="scrollbar-hidden mx-auto min-h-dvh w-full max-w-3xl pb-[calc(6rem+env(safe-area-inset-bottom))]">

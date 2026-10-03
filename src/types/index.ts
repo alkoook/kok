@@ -1,3 +1,5 @@
+import type { AudioPlaybackMode } from '../audio/types';
+
 export type GameType = 'trix-slow' | 'trix-fast' | 'cc' | 'tarneeb-61' | 'tarneeb-41';
 export type GameStatus = 'active' | 'completed' | 'cancelled';
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -190,6 +192,18 @@ export type AppSettings = {
   preferredTarneebTarget?: number;
   contextualMessages?: boolean;
   roastIntensity?: 1 | 2 | 3 | 4;
+  soundEnabled?: boolean;
+  masterVolume?: number;
+  effectsEnabled?: boolean;
+  effectsVolume?: number;
+  messageVoiceEnabled?: boolean;
+  voiceVolume?: number;
+  uiSoundsEnabled?: boolean;
+  speechVoiceURI?: string;
+  speechVoiceName?: string;
+  speechVoiceLang?: string;
+  speechRate?: number;
+  speechPitch?: number;
 };
 
 export type MessageCategory = 'fast-lash' | 'fast-trix' | 'old-man' | 'tarneeb-success' | 'tarneeb-failure' | 'tarneeb-special' | 'cc-lash';
@@ -250,6 +264,8 @@ export type ConditionalReactionRule = {
   oncePerMatch: boolean;
   cooldownRounds: number;
   intensity?: 1 | 2 | 3 | 4;
+  audioPlaybackMode?: AudioPlaybackMode;
+  audioAssetId?: string;
   order: number;
   createdAt: string;
   updatedAt: string;

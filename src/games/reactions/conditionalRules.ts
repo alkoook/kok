@@ -131,6 +131,7 @@ export function validateConditionalRule(rule: ConditionalReactionRule): string[]
   if (!Number.isInteger(rule.priority) || rule.priority < 1 || rule.priority > 100) errors.push('الأولوية يجب أن تكون بين 1 و100');
   if (rule.durationMs < 1000 || rule.durationMs > 30000) errors.push('المدة يجب أن تكون بين ثانية و30 ثانية');
   if (!Number.isInteger(rule.cooldownRounds) || rule.cooldownRounds < 0 || rule.cooldownRounds > 20) errors.push('الحماية من التكرار يجب أن تكون بين 0 و20 جولة');
+  if ((rule.audioPlaybackMode === 'custom-sound' || rule.audioPlaybackMode === 'sound-and-speech') && !rule.audioAssetId) errors.push('اختر صوتًا مخصصًا للقاعدة');
   const allowed = new Map(conditionFieldsFor(rule.game, rule.event).map((field) => [field.id, field]));
   for (const condition of rule.conditions) {
     const field = allowed.get(condition.field);

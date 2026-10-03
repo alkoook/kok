@@ -37,6 +37,12 @@ describe('محرك الرسائل المشروطة', () => {
     const ordinary = rule({ id: 'ordinary', priority: 100 });
     expect(selectConditionalReaction([ordinary, exclusive], context(), [])?.rule.id).toBe('exclusive');
   });
+  it('يحمل إعداد صوت القاعدة الحصرية الفائزة من دون اختيار صوت المنافس', () => {
+    const winner = rule({ id: 'winner', exclusive: true, priority: 90, audioPlaybackMode: 'sound-and-speech', audioAssetId: 'uploaded-1' });
+    const loser = rule({ id: 'loser', priority: 100, audioPlaybackMode: 'event-default' });
+    const selected = selectConditionalReaction([loser, winner], context(), []);
+    expect(selected?.rule).toMatchObject({ id: 'winner', audioPlaybackMode: 'sound-and-speech', audioAssetId: 'uploaded-1' });
+  });
   it('يرتب بالأولوية ثم التخصص ثم الترتيب الحتمي', () => {
     const generic = rule({ id: 'generic', priority: 60, order: 1 });
     const specific = rule({ id: 'specific', priority: 60, order: 9, conditions: [...generic.conditions, condition('gameMode', 'eq', 'partnership')] });

@@ -7,6 +7,7 @@ import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleF
 import { isTrix, uid } from '../utils';
 import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashInput } from '../games/fast/scoring';
 import type { LashRoundInput, MessageRule, TrixRankingInput } from '../types';
+import type { AudioEventMapping, UploadedAudioAsset } from '../audio/types';
 
 class KokDatabase extends Dexie {
   games!: EntityTable<GameSession, 'id'>;
@@ -18,6 +19,8 @@ class KokDatabase extends Dexie {
   contentOverrides!: EntityTable<ContentOverride, 'id'>;
   conditionalRules!: EntityTable<ConditionalReactionRule, 'id'>;
   conditionalRuleFirings!: EntityTable<ConditionalRuleFiring, 'id'>;
+  audioAssets!: EntityTable<UploadedAudioAsset, 'id'>;
+  audioEventMappings!: EntityTable<AudioEventMapping, 'event'>;
 
   constructor() {
     // الاسم الداخلي القديم محفوظ عمداً كي لا تضيع بيانات مستخدمي V1.
@@ -67,11 +70,17 @@ class KokDatabase extends Dexie {
       contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
       conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt'
     });
+    this.version(6).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event',
+      contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
+      conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt'
+    });
   }
 }
 
 export const db = new KokDatabase();
-export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, roastIntensity: 4, onboardingSeen: false };
+export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, roastIntensity: 4, soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1, onboardingSeen: false };
 
 const initialPresets = (): RulePreset[] => {
   const now = new Date().toISOString();
@@ -90,6 +99,7 @@ export async function initializeDatabase() {
     else if (settings.roundReactions === undefined) await db.settings.update('main', { roundReactions: true });
     if (settings && settings.preferredTarneebTarget === undefined) await db.settings.update('main', { preferredTarneebTarget: 61, contextualMessages: true });
     if (settings && settings.roastIntensity === undefined) await db.settings.update('main', { roastIntensity: 4 });
+    if (settings && settings.soundEnabled === undefined) await db.settings.update('main', { soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1 });
     for (const preset of initialPresets()) if (!(await db.presets.get(preset.id))) await db.presets.add(preset);
     for (const id of ['trix-slow', 'trix-fast'] as const) {
       const preset = await db.presets.get(id);
@@ -330,8 +340,8 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
 }
 
 export async function clearAllData() {
-  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides, db.conditionalRules, db.conditionalRuleFirings], async () => {
-    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear(), db.conditionalRules.clear(), db.conditionalRuleFirings.clear()]);
+  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides, db.conditionalRules, db.conditionalRuleFirings, db.audioAssets, db.audioEventMappings], async () => {
+    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear(), db.conditionalRules.clear(), db.conditionalRuleFirings.clear(), db.audioAssets.clear(), db.audioEventMappings.clear()]);
   });
   await initializeDatabase();
 }

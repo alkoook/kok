@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Crown, Pencil, Sparkles, Undo2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { addRound, db, replaceRound, undoLastRound } from '../../db/database';
 import { effectiveMessageRules, interpolateTemplate, matchingMessages, pickMessage, readRecentMessageIds, readRecentMessageSkeletons, rememberMessageId, renderMessage, type TemplateValues } from '../../games/fast/messages';
@@ -15,6 +15,8 @@ import { PlayerAvatar } from '../common/PlayerAvatar';
 import { ContextMessageOverlay } from './ContextMessageOverlay';
 import { LashScoreEntry } from './LashScoreEntry';
 import { TrixRankingEntry } from './TrixRankingEntry';
+import { audioEngine } from '../../audio/audioEngine';
+import type { AudioEvent, ReactionAudioOptions } from '../../audio/types';
 
 export function FastGamePanel({ game, rounds }: { game: GameSession; rounds: GameRound[] }) {
   const storedRules = useLiveQuery(() => db.messageRules.toArray(), [], []);
@@ -33,25 +35,32 @@ export function FastGamePanel({ game, rounds }: { game: GameSession; rounds: Gam
   const conditionalIndex = useMemo(() => indexConditionalRules(conditionalRules), [conditionalRules]);
   const [chosen, setChosen] = useState<'lash' | 'trix-ranking'>();
   const [editing, setEditing] = useState<GameRound>();
-  const [messages, setMessages] = useState<Array<{ id: string; text: string; duration: number; source: 'factory' | 'custom'; intensity?: number }>>([]);
+  const [messages, setMessages] = useState<Array<{ id: string; text: string; duration: number; source: 'factory' | 'custom'; intensity?: number; audio: ReactionAudioOptions }>>([]);
+  const [completionAudioPending, setCompletionAudioPending] = useState<AudioEvent>();
   const played = rounds.filter((round) => round.type !== 'manual-adjustment');
   const kingdomIndex = Math.min(3, Math.floor(played.length / 2));
   const owner = ownerForKingdom(game, kingdomIndex);
   const kingdomRounds = played.filter((round) => round.kingdomIndex === kingdomIndex);
   const cc = game.gameType === 'cc';
   const available: Array<'lash' | 'trix-ranking'> = cc ? ['lash'] : kingdomRounds.length === 0 ? ['lash', 'trix-ranking'] : kingdomRounds[0].type === 'lash' ? ['trix-ranking'] : ['lash'];
-  const showEvent = useCallback(async (reactionContext: ConditionalReactionContext, candidates: MessageRule[], factoryContext: Parameters<typeof renderMessage>[1]) => {
-    if (settings?.contextualMessages === false || settings?.roundReactions === false) return;
+  const showEvent = useCallback(async (reactionContext: ConditionalReactionContext, candidates: MessageRule[], factoryContext: Parameters<typeof renderMessage>[1], audioEvent: AudioEvent) => {
+    const showMessage = settings?.contextualMessages !== false && settings?.roundReactions !== false;
     const custom = selectConditionalReaction(conditionalIndex.get(`${reactionContext.game}:${reactionContext.event}`) ?? [], reactionContext, conditionalFirings);
     if (custom) {
       await db.conditionalRuleFirings.add({ id: uid(), ruleId: custom.rule.id, gameId: game.id, event: reactionContext.event, alternativeId: custom.alternative.id, roundIndex: reactionContext.roundIndex, firedAt: new Date().toISOString() });
-      setMessages((current) => [...current, { id: custom.alternative.id, text: interpolateTemplate(custom.alternative.text, reactionContext.placeholders as TemplateValues), duration: custom.rule.durationMs, source: 'custom', intensity: custom.rule.intensity }]);
+      const text = interpolateTemplate(custom.alternative.text, reactionContext.placeholders as TemplateValues);
+      const audio: ReactionAudioOptions = { event: audioEvent, message: text, mode: custom.rule.audioPlaybackMode, assetId: custom.rule.audioAssetId };
+      if (showMessage) setMessages((current) => [...current, { id: custom.alternative.id, text, duration: custom.rule.durationMs, source: 'custom', intensity: custom.rule.intensity, audio }]);
+      else void audioEngine.playReaction(audio);
       return;
     }
     const selected = pickMessage(candidates, readRecentMessageIds(), Math.random, readRecentMessageSkeletons());
-    if (!selected) return;
+    if (!selected) { void audioEngine.playEvent(audioEvent); return; }
     rememberMessageId(selected.id, selected.template);
-    setMessages((current) => [...current, { id: selected.id, text: renderMessage(selected, factoryContext), duration: selected.durationMs, source: 'factory', intensity: selected.intensity }]);
+    const text = renderMessage(selected, factoryContext);
+    const audio: ReactionAudioOptions = { event: audioEvent, message: text };
+    if (showMessage) setMessages((current) => [...current, { id: selected.id, text, duration: selected.durationMs, source: 'factory', intensity: selected.intensity, audio }]);
+    else void audioEngine.playReaction(audio);
   }, [conditionalFirings, conditionalIndex, game.id, settings?.contextualMessages, settings?.roundReactions]);
   const saveLash = async (input: LashRoundInput, delta: Record<string, number>) => {
     await addRound({ gameId: game.id, type: 'lash', kingdomIndex, kingdomOwnerId: owner.id, input, scoreDelta: delta });
@@ -62,8 +71,10 @@ export function FastGamePanel({ game, rounds }: { game: GameSession; rounds: Gam
     const occurrences = played.filter((round) => round.type === 'lash' && (round.input as LashRoundInput).oldMan.eaterPlayerId === input.oldMan.eaterPlayerId).length + 1;
     const historicalRecord = historicalOldMan.hasBaseline && occurrences >= Math.max(2, historicalOldMan.maximum);
     const context = { game, owner, ownerScore, eaterPlayerId: input.oldMan.eaterPlayerId, doubled: input.oldMan.doubled, occurrences, intensity: settings?.roastIntensity ?? 4, historicalRecord };
-    await showEvent(buildLashConditionalContext(game, rounds, input, owner, kingdomIndex, settings?.roastIntensity ?? 4), matchingMessages(rules, context, 'lash-owner-score'), context);
-    await showEvent(buildOldManConditionalContext(game, rounds, input, owner, kingdomIndex, settings?.roastIntensity ?? 4, historicalRecord), matchingMessages(rules, context, oldManEvent), context);
+    const lashAudio: AudioEvent = ownerScore > 0 ? 'lash-good' : ownerScore <= -350 ? 'lash-disaster' : ownerScore <= -200 ? 'lash-bad' : 'lash-saved';
+    await showEvent(buildLashConditionalContext(game, rounds, input, owner, kingdomIndex, settings?.roastIntensity ?? 4), matchingMessages(rules, context, 'lash-owner-score'), context, lashAudio);
+    await showEvent(buildOldManConditionalContext(game, rounds, input, owner, kingdomIndex, settings?.roastIntensity ?? 4, historicalRecord), matchingMessages(rules, context, oldManEvent), context, occurrences > 1 ? 'old-man-repeat' : input.oldMan.doubled ? 'old-man-doubled' : 'old-man');
+    if ((played.length + 1) % 2 === 0) setCompletionAudioPending(played.length + 1 >= 8 ? 'match-complete' : 'kingdom-complete');
     setChosen(undefined);
   };
   const saveTrix = async (input: TrixRankingInput, delta: Record<string, number>) => {
@@ -71,9 +82,14 @@ export function FastGamePanel({ game, rounds }: { game: GameSession; rounds: Gam
     const individual = trixRankingDelta(input.finishingOrder, game.players);
     const partnerId = partnerForPlayer(owner.id, game.teams);
     const context = { game, owner, ownerScore: individual[owner.id], partnerScore: partnerId ? individual[partnerId] : undefined, intensity: settings?.roastIntensity ?? 4 };
-    await showEvent(buildTrixConditionalContext(game, rounds, input, owner, kingdomIndex, settings?.roastIntensity ?? 4), game.trixMode === 'partnership' ? matchingMessages(rules, context, 'trix-partnership') : [], context);
+    const ownerPosition = input.finishingOrder.indexOf(owner.id) + 1;
+    await showEvent(buildTrixConditionalContext(game, rounds, input, owner, kingdomIndex, settings?.roastIntensity ?? 4), game.trixMode === 'partnership' ? matchingMessages(rules, context, 'trix-partnership') : [], context, ownerPosition === 1 ? 'trix-first' : ownerPosition === 4 ? 'trix-last' : 'round-saved');
+    if ((played.length + 1) % 2 === 0) setCompletionAudioPending(played.length + 1 >= 8 ? 'match-complete' : 'kingdom-complete');
     setChosen(undefined);
   };
+  const activeMessage = messages[0];
+  useEffect(() => { if (activeMessage) void audioEngine.playReaction(activeMessage.audio); }, [activeMessage]);
+  useEffect(() => { if (completionAudioPending && (game.status === 'completed' || messages.length === 0)) { void audioEngine.playEvent(completionAudioPending); setCompletionAudioPending(undefined); } }, [completionAudioPending, game.status, messages.length]);
   if (game.status === 'completed') return <FastResult game={game} rounds={rounds}/>;
   const currentLabel = chosen === 'lash' ? cc ? `لطش ${kingdomRounds.length + 1}` : 'لطش / كومبلكس' : chosen === 'trix-ranking' ? 'تركس' : undefined;
 
