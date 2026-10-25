@@ -1,6 +1,9 @@
 import type { AudioPlaybackMode } from '../audio/types';
+import type { LikhaMode, LikhaRoundInput, LikhaRules } from '../games/likha/types';
 
-export type GameType = 'trix-slow' | 'trix-fast' | 'cc' | 'tarneeb-61' | 'tarneeb-41';
+export type { LikhaMode, LikhaRoundInput, LikhaRules, LikhaSpecialCard, LikhaSpecialCapture, LikhaPlayerCapture, LikhaRanking } from '../games/likha/types';
+
+export type GameType = 'trix-slow' | 'trix-fast' | 'cc' | 'tarneeb-61' | 'tarneeb-41' | 'likha';
 export type GameStatus = 'active' | 'completed' | 'cancelled';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type TrixMode = 'individual' | 'solo' | 'partnership';
@@ -70,7 +73,8 @@ export type RulesSnapshot =
   | { kind: 'fast-trix-v5'; version: 5 }
   | { kind: 'cc-v1'; version: 1 }
   | { kind: 'cc-v2'; version: 2 }
-  | { kind: 'cc-v3'; version: 3 };
+  | { kind: 'cc-v3'; version: 3 }
+  | { kind: 'likha-v1'; version: 1; rules: LikhaRules };
 
 export type GameSession = {
   id: string;
@@ -86,6 +90,8 @@ export type GameSession = {
   rulesSnapshot: RulesSnapshot;
   rulesVersion?: 1 | 2 | 3 | 4 | 5;
   trixMode?: TrixMode;
+  /** Missing on legacy Likha sessions means individual mode. */
+  likhaMode?: LikhaMode;
   firstKingdomOwnerId?: string;
   winnerIds?: string[];
 };
@@ -133,6 +139,7 @@ export type Tarneeb41PlayerRoundResult = Tarneeb41PlayerRoundInput & {
 };
 export type Tarneeb41RoundInput = {
   phaseAtRoundStart: Tarneeb41Phase;
+  phaseByPlayerId?: Record<string, Tarneeb41Phase>;
   entries: Tarneeb41PlayerRoundResult[];
 };
 
@@ -169,10 +176,10 @@ export type GameRound = {
   id: string;
   gameId: string;
   index: number;
-  type: TrixContract | 'lash' | 'trix-ranking' | 'tarneeb' | 'tarneeb-41' | 'manual-adjustment';
+  type: TrixContract | 'lash' | 'trix-ranking' | 'tarneeb' | 'tarneeb-41' | 'likha' | 'manual-adjustment';
   kingdomIndex?: number;
   kingdomOwnerId?: string;
-  input: TrixRoundInput | LashRoundInput | TrixRankingInput | TarneebRoundInput | Tarneeb41RoundInput | ManualAdjustmentInput;
+  input: TrixRoundInput | LashRoundInput | TrixRankingInput | TarneebRoundInput | Tarneeb41RoundInput | LikhaRoundInput | ManualAdjustmentInput;
   scoreDelta: Record<string, number>;
   scoreAfter: Record<string, number>;
   createdAt: string;
@@ -307,7 +314,7 @@ export type RulePreset = {
 
 export type BackupFile = {
   app: 'Lammatna' | 'KOK';
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   exportedAt: string;
   data: {
     games: GameSession[];

@@ -2,12 +2,13 @@ import Dexie, { type EntityTable } from 'dexie';
 import { aggregatePartnershipScores, calculateTrixRound, validateKingdomBalance, validatePartnershipKingdomBalance, validateTrixInput } from '../games/trix/scoring';
 import { DEFAULT_TRIX_RULES, FAST_CONTRACTS, SLOW_CONTRACTS } from '../games/trix/rules';
 import { createUnconfirmedTarneebRules } from '../games/tarneeb/rules';
-import { calculateTarneeb41Round, calculateTarneeb61Round, deriveTarneeb41Phase, determineTarneeb41Winner, determineTarneebWinner } from '../games/tarneeb/scoring';
-import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleFiring, ContentOverride, GameRound, GameSession, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
+import { calculateTarneeb41Round, calculateTarneeb61Round, deriveTarneeb41PlayerPhases, determineTarneeb41Winner, determineTarneebWinner } from '../games/tarneeb/scoring';
+import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleFiring, ContentOverride, GameRound, GameSession, LikhaRoundInput, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
 import { isTrix, uid } from '../utils';
 import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashInput } from '../games/fast/scoring';
 import type { LashRoundInput, MessageRule, TrixRankingInput } from '../types';
 import type { AudioEventMapping, UploadedAudioAsset } from '../audio/types';
+import { aggregateLikhaTeamScores, calculateLikhaRound, isLikhaGameFinished, rankLikhaPlayers } from '../games/likha/engine';
 
 class KokDatabase extends Dexie {
   games!: EntityTable<GameSession, 'id'>;
@@ -76,6 +77,22 @@ class KokDatabase extends Dexie {
       contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
       conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt'
     });
+    // V7 keeps the same stores and indexes: Likha is represented by the existing
+    // game/round records, so upgrading never copies or rewrites historic data.
+    this.version(7).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event',
+      contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
+      conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt'
+    });
+    // V8 adds only the optional Likha mode field to game records. No indexes or
+    // historic records are rewritten; absent mode intentionally means individual.
+    this.version(8).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event',
+      contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
+      conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt'
+    });
   }
 }
 
@@ -126,7 +143,9 @@ export async function createGame(session: GameSession) {
 const sumScores = (base: Record<string, number>, delta: Record<string, number>, allowNegative = true) =>
   Object.fromEntries(Object.keys(base).map((id) => [id, allowNegative ? base[id] + (delta[id] ?? 0) : Math.max(0, base[id] + (delta[id] ?? 0))]));
 
-const scoreIdsForGame = (game: GameSession) => isFastGame(game) && game.trixMode === 'partnership' && game.teams
+const scoreIdsForGame = (game: GameSession) => game.gameType === 'likha'
+  ? game.players.map((player) => player.id)
+  : isFastGame(game) && game.trixMode === 'partnership' && game.teams
   ? game.teams.map((team) => team.id)
   : game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) || game.gameType === 'cc'
     ? game.players.map((player) => player.id)
@@ -145,6 +164,11 @@ function validateCompletedTrixKingdoms(game: GameSession, rounds: GameRound[]) {
 }
 
 function completionState(game: GameSession, rounds: GameRound[], scores: Record<string, number>) {
+  if (game.rulesSnapshot.kind === 'likha-v1') {
+    const officialScores = game.likhaMode === 'partnership' && game.teams ? aggregateLikhaTeamScores(scores, game.teams) : scores;
+    if (!isLikhaGameFinished(officialScores, game.rulesSnapshot.rules.lossLimit)) return { status: 'active' as const, winnerIds: undefined };
+    return { status: 'completed' as const, winnerIds: rankLikhaPlayers(officialScores).filter((entry) => entry.winner).map((entry) => entry.playerId) };
+  }
   if (isFastGame(game)) {
     const played = rounds.filter((round) => round.type !== 'manual-adjustment');
     if (played.length < 8) return { status: 'active' as const, winnerIds: undefined };
@@ -191,9 +215,11 @@ async function recomputeGameInTransaction(gameId: string) {
       scoreDelta = deriveFastRoundDelta(round.input as LashRoundInput | TrixRankingInput, game);
     } else if (game.rulesSnapshot.kind === 'tarneeb-41-v2' && round.type === 'tarneeb-41' && game.teams) {
       const entries = (round.input as Tarneeb41RoundInput).entries.map(({ playerId, bid, actualTricks }) => ({ playerId, bid, actualTricks }));
-      const calculated = calculateTarneeb41Round(entries, deriveTarneeb41Phase(scores, game.teams), game.players, game.rulesSnapshot.rules);
+      const calculated = calculateTarneeb41Round(entries, deriveTarneeb41PlayerPhases(scores, game.teams), game.players, game.rulesSnapshot.rules);
       input = calculated.input;
       scoreDelta = calculated.delta;
+    } else if (game.rulesSnapshot.kind === 'likha-v1' && round.type === 'likha') {
+      scoreDelta = calculateLikhaRound(round.input as LikhaRoundInput, game.players.map((player) => player.id));
     } else if (game.rulesSnapshot.kind === 'tarneeb-61-v2' && round.type === 'tarneeb' && game.teams) {
       scoreDelta = calculateTarneeb61Round(round.input as TarneebRoundInput, [game.teams[0].id, game.teams[1].id], game.rulesSnapshot.rules).delta;
     } else if (game.rulesSnapshot.kind === 'trix' && round.type !== 'manual-adjustment') {
@@ -238,8 +264,11 @@ function normalizeNewRound(game: GameSession, round: Omit<GameRound, 'id' | 'ind
   }
   if (game.rulesSnapshot.kind === 'tarneeb-41-v2' && round.type === 'tarneeb-41' && game.teams) {
     const entries = (round.input as Tarneeb41RoundInput).entries.map(({ playerId, bid, actualTricks }) => ({ playerId, bid, actualTricks }));
-    const calculated = calculateTarneeb41Round(entries, deriveTarneeb41Phase(game.scores, game.teams), game.players, game.rulesSnapshot.rules);
+    const calculated = calculateTarneeb41Round(entries, deriveTarneeb41PlayerPhases(game.scores, game.teams), game.players, game.rulesSnapshot.rules);
     return { ...round, input: calculated.input, scoreDelta: calculated.delta };
+  }
+  if (game.rulesSnapshot.kind === 'likha-v1' && round.type === 'likha') {
+    return { ...round, scoreDelta: calculateLikhaRound(round.input as LikhaRoundInput, game.players.map((player) => player.id)) };
   }
   if (game.rulesSnapshot.kind === 'trix' && round.type !== 'manual-adjustment') {
     const input = round.input as TrixRoundInput;
@@ -304,13 +333,13 @@ export async function deleteGame(gameId: string) {
 
 export async function exportBackup(): Promise<BackupFile> {
   const [games, rounds, players, presets, settings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings] = await Promise.all([db.games.toArray(), db.rounds.toArray(), db.players.toArray(), db.presets.toArray(), db.settings.toArray(), db.messageRules.toArray(), db.contentOverrides.toArray(), db.conditionalRules.toArray(), db.conditionalRuleFirings.toArray()]);
-  return { app: 'KOK', version: 4, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings } };
+  return { app: 'KOK', version: 5, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings } };
 }
 
 export function isValidBackup(value: unknown): value is BackupFile {
   if (!value || typeof value !== 'object') return false;
   const backup = value as Partial<BackupFile>;
-  if (!((backup.app === 'Lammatna' || backup.app === 'KOK') && (backup.version === 1 || backup.version === 2 || backup.version === 3 || backup.version === 4) && backup.data &&
+  if (!((backup.app === 'Lammatna' || backup.app === 'KOK') && (backup.version === 1 || backup.version === 2 || backup.version === 3 || backup.version === 4 || backup.version === 5) && backup.data &&
     ['games', 'rounds', 'players', 'presets', 'settings'].every((key) => Array.isArray((backup.data as unknown as Record<string, unknown>)[key])))) return false;
   return backup.data.games.every((item) => typeof item?.id === 'string' && typeof item?.gameType === 'string' && Array.isArray(item?.players)) &&
     backup.data.rounds.every((item) => typeof item?.id === 'string' && typeof item?.gameId === 'string' && Number.isInteger(item?.index)) &&

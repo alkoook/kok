@@ -96,12 +96,27 @@ export function calculateTarneeb61Round(
 }
 
 export function deriveTarneeb41Phase(scores: Record<string, number>, teams: GameTeam[]): Tarneeb41Phase {
-  const blocked = teams.some((team) => team.playerIds.some((playerId, index) =>
-    (scores[playerId] ?? 0) >= 41 && (scores[team.playerIds[index === 0 ? 1 : 0]] ?? 0) <= 0
-  ));
-  if (blocked) return 'blocked-41';
-  if (Object.values(scores).some((score) => score >= 30)) return 'thirty';
+  const phases = Object.values(deriveTarneeb41PlayerPhases(scores, teams));
+  if (phases.includes('blocked-41')) return 'blocked-41';
+  if (phases.includes('thirty')) return 'thirty';
   return 'normal';
+}
+
+/**
+ * The late-game restriction belongs to one partnership, never to the table.
+ * It is deliberately derived from current scores so edit/undo can move a side
+ * back below 30 without leaving stale state behind.
+ */
+export function deriveTarneeb41PlayerPhases(scores: Record<string, number>, teams: GameTeam[]): Record<string, Tarneeb41Phase> {
+  const phases: Record<string, Tarneeb41Phase> = {};
+  teams.forEach((team) => {
+    const [first, second] = team.playerIds;
+    const blocked = ((scores[first] ?? 0) >= 41 && (scores[second] ?? 0) <= 0) || ((scores[second] ?? 0) >= 41 && (scores[first] ?? 0) <= 0);
+    const forcedMinimum = (scores[first] ?? 0) >= 30 || (scores[second] ?? 0) >= 30;
+    const phase: Tarneeb41Phase = blocked ? 'blocked-41' : forcedMinimum ? 'thirty' : 'normal';
+    phases[first] = phase; phases[second] = phase;
+  });
+  return phases;
 }
 
 export const tarneeb41MinimumBid = (phase: Tarneeb41Phase) => phase === 'normal' ? 2 : phase === 'thirty' ? 3 : 4;
@@ -121,23 +136,31 @@ export function scoreTarneeb41Player(entry: Tarneeb41PlayerRoundInput, phase: Ta
 
 export type Tarneeb41BidValidation = { valid: boolean; totalBid: number; remaining: number; reason?: 'player-count' | 'individual-minimum' | 'total-minimum' | 'range' };
 
+type Tarneeb41PhaseInput = Tarneeb41Phase | Record<string, Tarneeb41Phase>;
+const phaseForPlayer = (phase: Tarneeb41PhaseInput, playerId: string): Tarneeb41Phase => typeof phase === 'string' ? phase : phase[playerId] ?? 'normal';
+const strongestPhase = (phase: Tarneeb41PhaseInput): Tarneeb41Phase => {
+  if (typeof phase === 'string') return phase;
+  const phases = Object.values(phase);
+  return phases.includes('blocked-41') ? 'blocked-41' : phases.includes('thirty') ? 'thirty' : 'normal';
+};
+
 export function validateTarneeb41Bids(
   entries: Pick<Tarneeb41PlayerRoundInput, 'playerId' | 'bid'>[],
-  phase: Tarneeb41Phase,
+  phase: Tarneeb41PhaseInput,
   rules: Tarneeb41RulesV2
 ): Tarneeb41BidValidation {
   const totalBid = entries.reduce((sum, entry) => sum + entry.bid, 0);
   const remaining = Math.max(0, rules.minimumTotalBids - totalBid);
   if (entries.length !== 4 || new Set(entries.map((entry) => entry.playerId)).size !== 4) return { valid: false, totalBid, remaining, reason: 'player-count' };
   if (entries.some((entry) => !Number.isInteger(entry.bid) || entry.bid > rules.maximumBid)) return { valid: false, totalBid, remaining, reason: 'range' };
-  if (entries.some((entry) => entry.bid < tarneeb41MinimumBid(phase))) return { valid: false, totalBid, remaining, reason: 'individual-minimum' };
+  if (entries.some((entry) => entry.bid < tarneeb41MinimumBid(phaseForPlayer(phase, entry.playerId)))) return { valid: false, totalBid, remaining, reason: 'individual-minimum' };
   if (totalBid < rules.minimumTotalBids) return { valid: false, totalBid, remaining, reason: 'total-minimum' };
   return { valid: true, totalBid, remaining };
 }
 
 export function calculateTarneeb41Round(
   entries: Tarneeb41PlayerRoundInput[],
-  phase: Tarneeb41Phase,
+  phase: Tarneeb41PhaseInput,
   players: GamePlayer[],
   rules: Tarneeb41RulesV2
 ): { input: Tarneeb41RoundInput; delta: Record<string, number> } {
@@ -146,10 +169,10 @@ export function calculateTarneeb41Round(
   if (!bidValidation.valid || tricksTotal !== 13 || entries.some((entry) => !Number.isInteger(entry.actualTricks) || entry.actualTricks < 0 || entry.actualTricks > 13)) {
     throw new Error('نتيجة جولة 41 غير صالحة');
   }
-  const results = entries.map((entry) => scoreTarneeb41Player(entry, phase));
+  const results = entries.map((entry) => scoreTarneeb41Player(entry, phaseForPlayer(phase, entry.playerId)));
   const playerIds = new Set(players.map((player) => player.id));
   if (results.some((result) => !playerIds.has(result.playerId))) throw new Error('لاعب غير صالح في جولة 41');
-  return { input: { phaseAtRoundStart: phase, entries: results }, delta: Object.fromEntries(results.map((result) => [result.playerId, result.scoreDelta])) };
+  return { input: { phaseAtRoundStart: strongestPhase(phase), phaseByPlayerId: typeof phase === 'string' ? undefined : { ...phase }, entries: results }, delta: Object.fromEntries(results.map((result) => [result.playerId, result.scoreDelta])) };
 }
 
 export function determineTarneeb41Winner(scores: Record<string, number>, teams: GameTeam[]) {

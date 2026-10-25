@@ -7,7 +7,8 @@ export const GAME_LABELS: Record<GameType, string> = {
   'trix-fast': 'تركس سريعة',
   cc: 'CC',
   'tarneeb-61': 'طرنيب 61',
-  'tarneeb-41': 'طرنيب سوري 41'
+  'tarneeb-41': 'طرنيب سوري 41',
+  likha: 'ليخة'
 };
 
 export const isTrix = (type: GameType) => type.startsWith('trix');

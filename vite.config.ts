@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['logo.svg', 'pwa-192.png', 'pwa-512.png', 'pwa-maskable.png'],
       manifest: {
-        name: 'KOK — تركس وطرنيب',
+        name: 'KOK — ألعاب الورق',
         short_name: 'KOK',
-        description: 'تركس • 61 • طرنيب 41',
+        description: 'تركس • CC • 61 • طرنيب 41 • ليخة',
         theme_color: '#0b1020',
         background_color: '#0b1020',
         display: 'standalone',

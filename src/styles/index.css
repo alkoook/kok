@@ -96,4 +96,7 @@ button { touch-action: manipulation; }
 .summary-hero { animation: summary-rise .38s cubic-bezier(.2,.8,.2,1) both; }
 .summary-hero svg { animation: summary-crown .42s .12s cubic-bezier(.2,.8,.2,1) both; }
 .summary-award-card { animation: summary-rise .32s cubic-bezier(.2,.8,.2,1) both; }
+.weekly-donkey-card { animation: summary-rise .38s cubic-bezier(.2,.8,.2,1) both; }
+.donkey-seal { animation: donkey-stamp .42s .16s cubic-bezier(.2,.9,.25,1.2) both; }
+@keyframes donkey-stamp { 0% { opacity: 0; transform: scale(1.8) rotate(-12deg); } 70% { opacity: 1; transform: scale(.94) rotate(3deg); } 100% { transform: scale(1) rotate(0); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }

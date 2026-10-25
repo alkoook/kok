@@ -26,6 +26,11 @@ import type { ConditionalRuleFiring, GameRound, GameSession, ManualAdjustmentInp
 import { formatDuration, GAME_LABELS, isTrix, scoreText, uid } from '../../utils';
 import { audioEngine } from '../../audio/audioEngine';
 import type { AudioEvent } from '../../audio/types';
+import { LikhaRoundEntry } from '../../components/likha/LikhaRoundEntry';
+import { LikhaReaction } from '../../components/likha/LikhaReaction';
+import { aggregateLikhaTeamScores, rankLikhaPlayers } from '../../games/likha/engine';
+import { selectLikhaReaction, type LikhaReaction as LikhaReactionData } from '../../games/likha/reactions';
+import type { LikhaRoundInput } from '../../types';
 
 const LazyFastGamePanel = lazy(() => import('../../components/fast/FastGamePanel').then((module) => ({ default: module.FastGamePanel })));
 const FastGamePanel = (props: { game: GameSession; rounds: GameRound[] }) => <Suspense fallback={<div className="mx-4 mt-4 surface h-80 animate-pulse"/>}><LazyFastGamePanel {...props}/></Suspense>;
@@ -46,8 +51,10 @@ export function GamePage() {
   const [editRound, setEditRound] = useState<GameRound>();
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [reaction, setReaction] = useState<(Tarneeb61ReactionData & { occurrence: number })>();
+  const [likhaReaction, setLikhaReaction] = useState<{ reaction: LikhaReactionData; scores: Array<{ name: string; delta: number; total: number }> }>();
   const lastReactionByPlayer = useRef(new Map<string, string>());
   const lastReactionRoundId = useRef<string | undefined>(undefined);
+  const lastLikhaReactionId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!settings?.keepAwake || !('wakeLock' in navigator)) return;
@@ -110,11 +117,23 @@ export function GamePage() {
     if (editRound) { await replaceRound(editRound.id, { input, scoreDelta: delta, type: 'tarneeb-41', note: editRound.note }); setEditRound(undefined); toast('تم تعديل الجولة وإعادة بناء المراحل'); }
     else { await addRound({ gameId: game.id, type: 'tarneeb-41', input, scoreDelta: delta }); const updated = await db.games.get(game.id); void audioEngine.playEvent(updated?.status === 'completed' ? 'match-complete' : 'round-saved'); saveFeedback(); }
   };
+  const saveLikha = async (input: LikhaRoundInput, delta: Record<string, number>) => {
+    if (editRound) { await replaceRound(editRound.id, { input, scoreDelta: delta, type: 'likha', note: editRound.note }); setEditRound(undefined); setLikhaReaction(undefined); toast('تم تعديل الجولة وإعادة حساب الليخة'); return; }
+    const saved = await addRound({ gameId: game.id, type: 'likha', input, scoreDelta: delta });
+    const capturePlayerId = input.specialCards.queenSpades.capturedBy;
+    const partnerId = game.likhaMode === 'partnership' ? game.teams?.find((team) => team.playerIds.includes(capturePlayerId))?.playerIds.find((id) => id !== capturePlayerId) : undefined;
+    const selected = selectLikhaReaction(input, saved.scoreDelta, lastLikhaReactionId.current, game.players.find((player) => player.id === partnerId)?.name); lastLikhaReactionId.current = selected.id;
+    const updated = await db.games.get(game.id); void audioEngine.playEvent(updated?.status === 'completed' ? 'match-complete' : 'round-saved');
+    if (settings?.vibration) navigator.vibrate?.(selected.tone === 'disaster' ? [25, 40, 25] : 18);
+    if (settings?.roundReactions !== false) setLikhaReaction({ reaction: selected, scores: game.players.map((player) => ({ name: player.name, delta: saved.scoreDelta[player.id] ?? 0, total: saved.scoreAfter[player.id] ?? 0 })) });
+    else toast('تم تسجيل الجولة');
+  };
 
   return <main className="scrollbar-hidden mx-auto min-h-dvh w-full max-w-3xl pb-[calc(6rem+env(safe-area-inset-bottom))]">
     <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-[color:var(--bg)]/90 px-4 py-3 backdrop-blur-xl dark:border-white/10"><div className="flex items-center justify-between"><button className="grid size-11 place-items-center rounded-2xl" onClick={() => navigate('/')} aria-label="الرئيسية"><ArrowRight size={21}/></button><div className="text-center"><h1 className="font-black">{game.rulesSnapshot.kind === 'tarneeb-61-v2' ? `طرنيب — الهدف ${game.rulesSnapshot.rules.targetScore}` : GAME_LABELS[game.gameType]}</h1><span className="flex items-center justify-center gap-1 text-xs text-mint-600"><Check size={13}/> محفوظ</span></div><button className="grid size-11 place-items-center rounded-2xl" onClick={() => setMenuOpen(true)} aria-label="قائمة المباراة"><MoreVertical size={21}/></button></div></header>
     {reaction && game.gameType === 'tarneeb-61' && <Tarneeb61Reaction key={reaction.occurrence} reaction={reaction} onDismiss={() => setReaction(undefined)}/>}
-    {(game.rulesSnapshot.kind === 'fast-trix-v3' || game.rulesSnapshot.kind === 'fast-trix-v4' || game.rulesSnapshot.kind === 'fast-trix-v5' || game.rulesSnapshot.kind === 'cc-v1' || game.rulesSnapshot.kind === 'cc-v2' || game.rulesSnapshot.kind === 'cc-v3') ? <FastGamePanel game={game} rounds={rounds}/> : game.status === 'completed' ? <Winner game={game} rounds={rounds} onUndo={() => setUndoOpen(true)} onHistory={() => setHistoryOpen(true)}/> : isTrix(game.gameType)
+    {likhaReaction && game.gameType === 'likha' && <LikhaReaction key={`${likhaReaction.reaction.id}-${rounds.length}`} reaction={likhaReaction.reaction} playerName={game.players.find((player) => player.id === likhaReaction.reaction.playerId)?.name ?? 'لاعب'} scores={likhaReaction.scores} onDismiss={() => setLikhaReaction(undefined)}/>}
+    {game.gameType === 'likha' && game.rulesSnapshot.kind === 'likha-v1' ? game.status === 'completed' ? <LikhaWinner game={game} rounds={rounds} onUndo={() => setUndoOpen(true)} onHistory={() => setHistoryOpen(true)}/> : <LikhaActive game={game} rounds={rounds} onSave={saveLikha}/> : (game.rulesSnapshot.kind === 'fast-trix-v3' || game.rulesSnapshot.kind === 'fast-trix-v4' || game.rulesSnapshot.kind === 'fast-trix-v5' || game.rulesSnapshot.kind === 'cc-v1' || game.rulesSnapshot.kind === 'cc-v2' || game.rulesSnapshot.kind === 'cc-v3') ? <FastGamePanel game={game} rounds={rounds}/> : game.status === 'completed' ? <Winner game={game} rounds={rounds} onUndo={() => setUndoOpen(true)} onHistory={() => setHistoryOpen(true)}/> : isTrix(game.gameType)
       ? <TrixActive game={game} rounds={rounds} selectedContract={selectedContract} setSelectedContract={setSelectedContract} onSave={saveTrix}/>
       : game.gameType === 'tarneeb-41' && game.rulesSnapshot.kind === 'tarneeb-41-v2' ? <Tarneeb41Active game={game} rounds={rounds} onSave={saveTarneeb41}/> : <TarneebActive game={game} rounds={rounds} onSave={saveTarneeb}/>} 
     {game.status === 'active' && <div className="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-3xl border-t border-slate-200 bg-[color:var(--surface)]/95 px-4 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur dark:border-white/10"><div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={!lastRound} icon={<Undo2 size={18}/>} onClick={() => setUndoOpen(true)}>تراجع</Button><Button variant="secondary" icon={<History size={18}/>} onClick={() => setHistoryOpen(true)}>سجل الجولات</Button></div></div>}
@@ -123,7 +142,7 @@ export function GamePage() {
     <Modal open={historyOpen} title="سجل الجولات" onClose={() => setHistoryOpen(false)}><RoundTimeline game={game} rounds={rounds} onEdit={(round) => { setEditRound(round); setHistoryOpen(false); }}/></Modal>
     <Modal open={menuOpen} title="خيارات المباراة" onClose={() => setMenuOpen(false)}><div className="space-y-2"><Link className="flex min-h-12 items-center gap-3 rounded-2xl bg-slate-100 px-4 font-bold dark:bg-white/5" to={`/details/${game.id}`}><History size={19}/> تفاصيل المباراة</Link>{game.status === 'active' && <button className="flex min-h-12 w-full items-center gap-3 rounded-2xl bg-slate-100 px-4 font-bold dark:bg-white/5" onClick={() => { setMenuOpen(false); setAdjustmentOpen(true); }}><Pencil size={19}/> تصحيح النقاط يدويًا</button>}<Link className="flex min-h-12 items-center gap-3 rounded-2xl bg-slate-100 px-4 font-bold dark:bg-white/5" to="/"><Home size={19}/> المباراة محفوظة — العودة</Link></div></Modal>
     <Modal open={adjustmentOpen} title="تصحيح النقاط" onClose={() => setAdjustmentOpen(false)}><ManualAdjustment game={game} onSave={async (input, delta) => { await addRound({ gameId: game.id, type: 'manual-adjustment', input, scoreDelta: delta, note: input.reason }); setAdjustmentOpen(false); toast('تم تسجيل التصحيح'); }}/></Modal>
-    <Modal open={Boolean(editRound)} title="تعديل النتيجة" onClose={() => setEditRound(undefined)}>{editRound && (isTrix(game.gameType) && game.rulesSnapshot.kind === 'trix' && editRound.type !== 'manual-adjustment' ? <TrixRoundEntry key={editRound.id} contract={editRound.type as TrixContract} players={game.players} teams={game.teams} mode={game.trixMode} rules={game.rulesSnapshot.rules} initial={editRound.input as TrixRoundInput} onConfirm={(input, delta) => saveTrix(input, delta, editRound.kingdomIndex ?? 0, editRound.kingdomOwnerId ?? '')} submitLabel="حفظ التعديل"/> : game.gameType === 'tarneeb-41' && game.teams && game.rulesSnapshot.kind === 'tarneeb-41-v2' && editRound.type === 'tarneeb-41' ? <Tarneeb41RoundEntry key={editRound.id} players={game.players} teams={game.teams} scores={rounds[editRound.index - 1]?.scoreAfter ?? Object.fromEntries(game.players.map((player) => [player.id, 0]))} rules={game.rulesSnapshot.rules} initial={editRound.input as Tarneeb41RoundInput} onConfirm={saveTarneeb41} submitLabel="حفظ التعديل"/> : !isTrix(game.gameType) && game.teams && (game.rulesSnapshot.kind === 'tarneeb' || game.rulesSnapshot.kind === 'tarneeb-61-v2') && editRound.type === 'tarneeb' ? <TarneebRoundEntry key={editRound.id} players={game.players} teams={game.teams} scores={rounds[editRound.index - 1]?.scoreAfter ?? Object.fromEntries(game.teams.map((team) => [team.id, 0]))} rules={game.rulesSnapshot.rules} initial={editRound.input as TarneebRoundInput} onConfirm={saveTarneeb} submitLabel="حفظ التعديل"/> : <p className="muted">يمكن التراجع عن التصحيح ثم تسجيله مجددًا.</p>)}</Modal>
+    <Modal open={Boolean(editRound)} title="تعديل النتيجة" onClose={() => setEditRound(undefined)}>{editRound && (game.gameType === 'likha' && editRound.type === 'likha' ? <LikhaRoundEntry key={editRound.id} players={game.players} scores={rounds[editRound.index - 1]?.scoreAfter ?? Object.fromEntries(game.players.map((player) => [player.id, 0]))} teams={game.teams} mode={game.likhaMode ?? 'individual'} initial={editRound.input as LikhaRoundInput} onConfirm={saveLikha} submitLabel="حفظ التعديل"/> : isTrix(game.gameType) && game.rulesSnapshot.kind === 'trix' && editRound.type !== 'manual-adjustment' ? <TrixRoundEntry key={editRound.id} contract={editRound.type as TrixContract} players={game.players} teams={game.teams} mode={game.trixMode} rules={game.rulesSnapshot.rules} initial={editRound.input as TrixRoundInput} onConfirm={(input, delta) => saveTrix(input, delta, editRound.kingdomIndex ?? 0, editRound.kingdomOwnerId ?? '')} submitLabel="حفظ التعديل"/> : game.gameType === 'tarneeb-41' && game.teams && game.rulesSnapshot.kind === 'tarneeb-41-v2' && editRound.type === 'tarneeb-41' ? <Tarneeb41RoundEntry key={editRound.id} players={game.players} teams={game.teams} scores={rounds[editRound.index - 1]?.scoreAfter ?? Object.fromEntries(game.players.map((player) => [player.id, 0]))} rules={game.rulesSnapshot.rules} initial={editRound.input as Tarneeb41RoundInput} onConfirm={saveTarneeb41} submitLabel="حفظ التعديل"/> : !isTrix(game.gameType) && game.teams && (game.rulesSnapshot.kind === 'tarneeb' || game.rulesSnapshot.kind === 'tarneeb-61-v2') && editRound.type === 'tarneeb' ? <TarneebRoundEntry key={editRound.id} players={game.players} teams={game.teams} scores={rounds[editRound.index - 1]?.scoreAfter ?? Object.fromEntries(game.teams.map((team) => [team.id, 0]))} rules={game.rulesSnapshot.rules} initial={editRound.input as TarneebRoundInput} onConfirm={saveTarneeb} submitLabel="حفظ التعديل"/> : <p className="muted">يمكن التراجع عن التصحيح ثم تسجيله مجددًا.</p>)}</Modal>
   </main>;
 }
 
@@ -153,6 +172,26 @@ function Tarneeb41Active({ game, rounds, onSave }: { game: GameSession; rounds: 
   if (!game.teams || game.rulesSnapshot.kind !== 'tarneeb-41-v2') return null;
   return <div className="px-4 py-3"><div className="mb-2 flex items-end justify-between"><div><span className="eyebrow">ضمان فردي</span><h2 className="text-lg font-black">جولة {rounds.filter((round) => round.type === 'tarneeb-41').length + 1}</h2></div><span className="rounded-full bg-[var(--surface)] px-3 py-1 text-xs font-bold">الهدف 41</span></div><Tarneeb41Scoreboard players={game.players} teams={game.teams} scores={game.scores}/><section className="surface mt-2 p-3"><Tarneeb41RoundEntry players={game.players} teams={game.teams} scores={game.scores} rules={game.rulesSnapshot.rules} onConfirm={onSave}/></section></div>;
 }
+
+function LikhaActive({ game, rounds, onSave }: { game: GameSession; rounds: GameRound[]; onSave: (input: LikhaRoundInput, delta: Record<string, number>) => Promise<void> }) {
+  if (game.rulesSnapshot.kind !== 'likha-v1') return null;
+  const partnership = game.likhaMode === 'partnership' && game.teams?.length === 2;
+  const official = partnership ? aggregateLikhaTeamScores(game.scores, game.teams!) : game.scores;
+  const scoreTargets = partnership ? game.teams! : game.players;
+  return <div className="px-3 py-4"><div className="mb-3 flex items-end justify-between"><div><span className="eyebrow">أربعة لاعبين · {partnership ? 'شراكة' : 'حساب فردي'}</span><h2 className="text-xl font-black">جولة {rounds.filter((round) => round.type === 'likha').length + 1}</h2></div><span className="rounded-full bg-rose-500/10 px-3 py-1 text-xs font-black text-rose-600">النهاية −{game.rulesSnapshot.rules.lossLimit}</span></div><div className="mb-3 grid grid-cols-2 gap-2">{scoreTargets.map((target) => <div key={target.id} className="surface min-w-0 p-3"><span className="muted block truncate text-xs">{target.name}</span><strong className={`text-2xl tabular-nums ${(official[target.id] ?? 0) < 0 ? 'text-red-500' : 'text-mint-600'}`}>{scoreText(official[target.id] ?? 0)}</strong>{partnership && <small className="muted block truncate">{game.teams?.find((team) => team.id === target.id)?.playerIds.map((id) => game.players.find((player) => player.id === id)?.name).join(' + ')}</small>}</div>)}</div><section className="surface p-3 sm:p-5"><LikhaRoundEntry players={game.players} scores={game.scores} teams={game.teams} mode={game.likhaMode ?? 'individual'} onConfirm={onSave}/></section></div>;
+}
+
+function LikhaWinner({ game, rounds, onUndo, onHistory }: { game: GameSession; rounds: GameRound[]; onUndo: () => void; onHistory: () => void }) {
+  const partnership = game.likhaMode === 'partnership' && game.teams?.length === 2;
+  const officialScores = partnership ? aggregateLikhaTeamScores(game.scores, game.teams!) : game.scores;
+  const ranking = rankLikhaPlayers(officialScores); const likhaRounds = rounds.filter((round) => round.type === 'likha');
+  const queenCounts = Object.fromEntries(game.players.map((player) => [player.id, 0])); const tenCounts = { ...queenCounts }; let worst: { playerId: string; score: number; round: number } | undefined;
+  likhaRounds.forEach((round) => { const input = round.input as LikhaRoundInput; queenCounts[input.specialCards.queenSpades.capturedBy] += 1; tenCounts[input.specialCards.tenDiamonds.capturedBy] += 1; Object.entries(round.scoreDelta).forEach(([playerId, score]) => { if (!worst || score < worst.score) worst = { playerId, score, round: round.index + 1 }; }); });
+  const queenMagnet = [...game.players].sort((a, b) => queenCounts[b.id] - queenCounts[a.id])[0]; const tenHunter = [...game.players].sort((a, b) => tenCounts[b.id] - tenCounts[a.id])[0]; const name = (id: string) => game.teams?.find((team) => team.id === id)?.name ?? game.players.find((player) => player.id === id)?.name ?? '';
+  return <div className="px-4 py-6"><section className="surface overflow-hidden"><div className="bg-gradient-to-b from-rose-500/15 via-amber-500/5 to-transparent p-6 text-center"><div className="mx-auto mb-3 grid size-20 place-items-center rounded-full bg-amber-400 text-slate-950 shadow-xl"><Trophy size={38}/></div><span className="eyebrow">{ranking.filter((entry) => entry.winner).length > 1 ? 'تعادل حقيقي' : 'الفائز بالليخة'}</span><h2 className="mt-1 text-3xl font-black">{ranking.filter((entry) => entry.winner).map((entry) => name(entry.playerId)).join(' و ')}</h2><p className="muted mt-1">{likhaRounds.length} جولات · النهاية عند −{game.rulesSnapshot.kind === 'likha-v1' ? game.rulesSnapshot.rules.lossLimit : 210}</p></div><div className="mx-4 space-y-2">{ranking.map((entry) => <div key={entry.playerId} className={`flex items-center gap-3 rounded-2xl p-3 ${entry.winner ? 'bg-amber-400/15' : entry.rank === ranking.length ? 'bg-rose-500/10' : 'bg-slate-100 dark:bg-white/5'}`}><span className="text-xl">{entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : '💀'}</span><strong className="min-w-0 flex-1 truncate">{name(entry.playerId)}</strong><b className="text-xl tabular-nums">{scoreText(entry.score)}</b></div>)}</div><div className="m-4 grid gap-2 sm:grid-cols-3">{queenCounts[queenMagnet.id] > 0 && <Highlight emoji="👸" label="مغناطيس البنت" value={`${queenMagnet.name} ×${queenCounts[queenMagnet.id]}`}/>} {tenCounts[tenHunter.id] > 0 && <Highlight emoji="♦" label="صياد العشرة" value={`${tenHunter.name} ×${tenCounts[tenHunter.id]}`}/>} {worst && <Highlight emoji="☠️" label="أقسى جولة" value={`${name(worst.playerId)} ${scoreText(worst.score)} · ج${worst.round}`}/>}</div><div className="grid gap-2 p-4 pt-0"><ReplayButton game={game}/><div className="grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onHistory}>سجل الجولات</Button><Button variant="secondary" icon={<Undo2 size={17}/>} onClick={onUndo}>تراجع</Button></div><Link className="flex min-h-12 items-center justify-center rounded-2xl bg-slate-100 font-bold dark:bg-white/10" to={`/details/${game.id}`}>تفاصيل المباراة</Link></div></section></div>;
+}
+
+function Highlight({ emoji, label, value }: { emoji: string; label: string; value: string }) { return <article className="rounded-2xl border border-[var(--border)] p-3"><span className="text-xl">{emoji}</span><small className="muted mt-1 block">{label}</small><strong className="block">{value}</strong></article>; }
 
 function Winner({ game, rounds, onUndo, onHistory }: { game: GameSession; rounds: GameRound[]; onUndo: () => void; onHistory: () => void }) {
   const winners = game.winnerIds?.map((id) => game.teams?.find((team) => team.id === id)?.name ?? game.players.find((player) => player.id === id)?.name).filter(Boolean) ?? [];
@@ -184,8 +223,21 @@ function ManualAdjustment({ game, onSave }: { game: GameSession; onSave: (input:
 }
 
 function labelForId(game: GameSession, id: string) { return game.teams?.find((team) => team.id === id)?.name ?? game.players.find((player) => player.id === id)?.name ?? ''; }
-function displayRoundDelta(round: GameRound, game: GameSession) { return game.gameType === 'trix-slow' && game.trixMode === 'partnership' && game.teams ? aggregatePartnershipScores(round.scoreDelta, game.teams) : round.scoreDelta; }
+function displayRoundDelta(round: GameRound, game: GameSession) {
+  if (game.gameType === 'likha' && game.likhaMode === 'partnership' && game.teams) return aggregateLikhaTeamScores(round.scoreDelta, game.teams);
+  return game.gameType === 'trix-slow' && game.trixMode === 'partnership' && game.teams ? aggregatePartnershipScores(round.scoreDelta, game.teams) : round.scoreDelta;
+}
 function trixRoundDetails(round: GameRound, game: GameSession) {
+  if (round.type === 'likha') {
+    const input = round.input as LikhaRoundInput; const name = (id: string) => labelForId(game, id);
+    return [
+      `👑 بنت البستوني: ${name(input.specialCards.queenSpades.capturedBy)} · ${input.specialCards.queenSpades.doubled ? '×2 مدبلة' : 'عادي'}`,
+      `♦ 10 الديناري: ${name(input.specialCards.tenDiamonds.capturedBy)} · ${input.specialCards.tenDiamonds.doubled ? '×2 مدبل' : 'عادي'}`,
+      `♣ ختيار الزهر: ${name(input.specialCards.kingClubs.capturedBy)} · ${input.specialCards.kingClubs.doubled ? '×2 مدبل' : 'عادي'}`,
+      `♦ شب الديناري: ${name(input.specialCards.jackDiamonds.capturedBy)} · ${input.specialCards.jackDiamonds.doubled ? '×2 مدبل' : 'عادي'}`,
+      `♥ الكوبا: ${input.players.map((entry) => `${name(entry.playerId)} ${entry.heartsCount}`).join(' · ')}`
+    ];
+  }
   if (!isTrix(game.gameType) || round.type === 'manual-adjustment') return [];
   const input = round.input as TrixRoundInput; const details: string[] = [];
   const targetName = (teamId?: string, playerId?: string) => labelForId(game, teamId ?? playerId ?? '');
@@ -196,6 +248,7 @@ function trixRoundDetails(round: GameRound, game: GameSession) {
   return details;
 }
 function roundTitle(round: GameRound, game: GameSession) {
+  if (round.type === 'likha') return 'جولة ليخة';
   if (round.type === 'tarneeb') return `ضمان ${(round.input as TarneebRoundInput).bid}`;
   if (round.type === 'tarneeb-41') return `ضمانات فردية — ${(round.input as Tarneeb41RoundInput).phaseAtRoundStart === 'normal' ? 'الوضع العادي' : (round.input as Tarneeb41RoundInput).phaseAtRoundStart === 'thirty' ? 'مرحلة 30' : 'مرحلة 41'}`;
   if (round.type === 'manual-adjustment') return `تصحيح نقاط — ${labelForId(game, (round.input as ManualAdjustmentInput).targetId)}`;
