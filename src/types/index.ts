@@ -5,6 +5,7 @@ export type { LikhaMode, LikhaRoundInput, LikhaRules, LikhaSpecialCard, LikhaSpe
 
 export type GameType = 'trix-slow' | 'trix-fast' | 'cc' | 'tarneeb-61' | 'tarneeb-41' | 'likha';
 export type GameStatus = 'active' | 'completed' | 'cancelled';
+export type GameFinishReason = 'natural' | 'manual_early_finish';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type TrixMode = 'individual' | 'solo' | 'partnership';
 export type TrixSuit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
@@ -85,6 +86,8 @@ export type GameSession = {
   createdAt: string;
   updatedAt: string;
   finishedAt?: string;
+  finishReason?: GameFinishReason;
+  resultRevision?: number;
   currentRound: number;
   scores: Record<string, number>;
   rulesSnapshot: RulesSnapshot;
@@ -211,6 +214,44 @@ export type AppSettings = {
   speechVoiceLang?: string;
   speechRate?: number;
   speechPitch?: number;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  telegramThreadId?: string;
+  telegramAutoSend?: boolean;
+  telegramBotUsername?: string;
+  telegramLastError?: string;
+  telegramLastSentAt?: string;
+};
+
+export type TelegramOutboxStatus = 'pending' | 'sending' | 'sent' | 'failed_retryable' | 'failed_permanent';
+export type TelegramResultSnapshot = {
+  gameId: string;
+  gameType: GameType;
+  resultRevision: number;
+  correction: boolean;
+  finishReason: GameFinishReason;
+  finishedAt: string;
+  players: Array<{ id: string; name: string; profileId?: string }>;
+  standings: Array<{ id: string; name: string; score: number; rank: number; winner: boolean; playerIds: string[] }>;
+  winnerIds: string[];
+  roundCount: number;
+};
+export type TelegramOutboxItem = {
+  id: string;
+  gameId: string;
+  gameType: GameType;
+  resultRevision: number;
+  messageText: string;
+  resultSnapshot: TelegramResultSnapshot;
+  createdAt: string;
+  updatedAt: string;
+  status: TelegramOutboxStatus;
+  attemptCount: number;
+  lastAttemptAt?: string;
+  nextAttemptAt?: string;
+  sentAt?: string;
+  lastError?: string;
+  telegramMessageIds?: number[];
 };
 
 export type MessageCategory = 'fast-lash' | 'fast-trix' | 'old-man' | 'tarneeb-success' | 'tarneeb-failure' | 'tarneeb-special' | 'cc-lash';

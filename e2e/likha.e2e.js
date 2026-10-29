@@ -34,5 +34,5 @@ test('Likha partnership uses A+B versus C+D and shows live official totals', asy
 });
 
 test('weekly donkey empty state is deterministic and responsive', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`${base}#/weekly-donkey`); await dismissOnboarding(page); await expect(page.getByText('الأسبوع هاد لسا ما فضح حدا.')).toBeVisible(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`${base}#/weekly-donkey`); await dismissOnboarding(page); await page.getByRole('tab', { name: '🐴 الحمار' }).click(); await expect(page.getByText('لسا ما حدا فضح حاله كفاية.')).toBeVisible(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });

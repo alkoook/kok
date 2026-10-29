@@ -20,6 +20,7 @@ describe('weekly donkey', () => {
   it('applies losses, catastrophes and severity tie breakers', () => { expect(selectWeeklyDonkey([player('a', 20, 2, 1, 14), player('b', 20, 3, 0, 8)])[0].profileId).toBe('b'); expect(selectWeeklyDonkey([player('a', 20, 3, 2, 14), player('b', 20, 3, 1, 16)])[0].profileId).toBe('a'); });
   it('returns a real shared tie and never chooses randomly', () => expect(selectWeeklyDonkey([player('a', 20, 3, 2, 14), player('b', 20, 3, 2, 14)]).map((item) => item.profileId)).toEqual(['a', 'b']));
   it('requires two completed games', () => expect(selectWeeklyDonkey([player('a', 100, 1, 1, 16, 1)])).toEqual([]));
+  it('does not award the donkey title when every eligible score is clean', () => expect(selectWeeklyDonkey([player('a', 0, 0, 0, 0)])).toEqual([]));
   it('attributes partnership losses to both partners but the queen only to its eater', () => {
     const roster = ['a', 'b', 'c', 'd'].map((id, seat) => ({ id, profileId: `profile-${id}`, name: id.toUpperCase(), seat }));
     const teams = [{ id: 'ab', name: 'A+B', playerIds: ['a', 'b'] as [string, string] }, { id: 'cd', name: 'C+D', playerIds: ['c', 'd'] as [string, string] }];
@@ -31,7 +32,7 @@ describe('weekly donkey', () => {
     expect(stats.find((item) => item.profileId === 'profile-b')?.counters).toMatchObject({ losses: 2, doubledQueens: 0 });
     expect(stats.find((item) => item.profileId === 'profile-c')?.counters.wins).toBe(2);
   });
-  it('uses Monday through next Monday in local calendar time', () => { const sunday = getLocalWeekBounds(new Date(2026, 9, 25, 23, 59)); const monday = getLocalWeekBounds(new Date(2026, 9, 26, 0, 0)); expect(sunday.key).toBe('2026-10-19'); expect(monday.key).toBe('2026-10-26'); });
+  it('uses Saturday 10:00 through next Saturday 10:00 in local calendar time', () => { const before = getLocalWeekBounds(new Date(2026, 9, 24, 9, 59)); const boundary = getLocalWeekBounds(new Date(2026, 9, 24, 10, 0)); expect(before.key).toBe('2026-10-17T10:00-local'); expect(boundary.key).toBe('2026-10-24T10:00-local'); });
   it('builds the same roast from the same week and player', () => expect(buildWeeklyRoast('2026-10-19', 'p1')).toBe(buildWeeklyRoast('2026-10-19', 'p1')));
   it('keeps the no-data input safe', () => expect(selectWeeklyDonkey([])).toEqual([]));
 });

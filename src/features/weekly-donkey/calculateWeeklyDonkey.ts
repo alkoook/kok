@@ -1,6 +1,10 @@
 import type { GameRound, GameSession, LashRoundInput, LikhaRoundInput, Tarneeb41RoundInput } from '../../types';
 import { buildTarneeb61Attempts } from '../../games/tarneeb/analytics';
 import { calculateLikhaRound } from '../../games/likha/engine';
+import { didPlayerWin, getLocalWeekBounds, isCompletedGameInWeek, type WeekBounds } from '../weekly/weekWindow';
+
+export { getLocalWeekBounds, shiftLocalWeek } from '../weekly/weekWindow';
+export type { WeekBounds } from '../weekly/weekWindow';
 
 export const WEEKLY_DONKEY_WEIGHTS = {
   gameLoss: 5, gameWin: -2, tarneeb61Break: 8, brokenSeven: 14, failureStreakThree: 4, failureStreakExtra: 2,
@@ -9,37 +13,11 @@ export const WEEKLY_DONKEY_WEIGHTS = {
   oldMan: 4, oldManDoubled: 8, trixLast: 4
 } as const;
 
-export type WeekBounds = { key: string; start: Date; endExclusive: Date };
 export type WeeklyCounters = { losses: number; wins: number; tarneeb61Breaks: number; brokenSevens: number; maxBrokenBid: number; queenSpades: number; doubledQueens: number; kingClubs: number; jackDiamonds: number; hearts: number; tenDiamonds: number; worstLikhaRound?: number; oldMan: number; doubledOldMan: number; worstLash?: number; tarneeb41Breaks: number; trixLast: number };
 export type WeeklyPlayerStats = { profileId: string; name: string; completedGames: number; donkeyScore: number; catastrophicEvents: number; worstEventSeverity: number; counters: WeeklyCounters; reasons: string[] };
 export type WeeklyDonkeyResult = { bounds: WeekBounds; eligible: WeeklyPlayerStats[]; winners: WeeklyPlayerStats[] };
 
-const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-
-export function getLocalWeekBounds(reference = new Date()): WeekBounds {
-  const start = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
-  const distanceFromMonday = (start.getDay() + 6) % 7;
-  start.setDate(start.getDate() - distanceFromMonday); start.setHours(0, 0, 0, 0);
-  const endExclusive = new Date(start); endExclusive.setDate(endExclusive.getDate() + 7);
-  return { key: localDateKey(start), start, endExclusive };
-}
-
-export function shiftLocalWeek(bounds: WeekBounds, offset: number): WeekBounds {
-  const reference = new Date(bounds.start); reference.setDate(reference.getDate() + offset * 7); return getLocalWeekBounds(reference);
-}
-
 const blankCounters = (): WeeklyCounters => ({ losses: 0, wins: 0, tarneeb61Breaks: 0, brokenSevens: 0, maxBrokenBid: 0, queenSpades: 0, doubledQueens: 0, kingClubs: 0, jackDiamonds: 0, hearts: 0, tenDiamonds: 0, oldMan: 0, doubledOldMan: 0, tarneeb41Breaks: 0, trixLast: 0 });
-
-function completedInWeek(game: GameSession, bounds: WeekBounds) {
-  if (game.status !== 'completed') return false;
-  const completed = new Date(game.finishedAt ?? game.updatedAt);
-  return completed >= bounds.start && completed < bounds.endExclusive;
-}
-
-function didPlayerWin(game: GameSession, playerId: string) {
-  const team = game.teams?.find((entry) => entry.playerIds.includes(playerId));
-  return Boolean(game.winnerIds?.includes(team?.id ?? playerId));
-}
 
 function reasonLines(counters: WeeklyCounters) {
   const reasons: string[] = [];
@@ -58,7 +36,7 @@ function reasonLines(counters: WeeklyCounters) {
 }
 
 export function calculateWeeklyPlayerStats(games: GameSession[], rounds: GameRound[], bounds: WeekBounds): WeeklyPlayerStats[] {
-  const relevant = games.filter((game) => completedInWeek(game, bounds));
+  const relevant = games.filter((game) => isCompletedGameInWeek(game, bounds));
   const stats = new Map<string, WeeklyPlayerStats>();
   const byGame = new Map<string, GameRound[]>(); rounds.forEach((round) => byGame.set(round.gameId, [...(byGame.get(round.gameId) ?? []), round]));
   const find = (game: GameSession, playerId: string) => {
@@ -111,7 +89,7 @@ export function calculateWeeklyPlayerStats(games: GameSession[], rounds: GameRou
 export function calculateWeeklyDonkeyScore(stats: WeeklyPlayerStats) { return stats.donkeyScore; }
 
 export function selectWeeklyDonkey(players: WeeklyPlayerStats[], minimumCompletedGames = 2): WeeklyPlayerStats[] {
-  const eligible = players.filter((player) => player.completedGames >= minimumCompletedGames).sort((a, b) => b.donkeyScore - a.donkeyScore || b.counters.losses - a.counters.losses || b.catastrophicEvents - a.catastrophicEvents || b.worstEventSeverity - a.worstEventSeverity || a.profileId.localeCompare(b.profileId));
+  const eligible = players.filter((player) => player.completedGames >= minimumCompletedGames && player.donkeyScore > 0).sort((a, b) => b.donkeyScore - a.donkeyScore || b.counters.losses - a.counters.losses || b.catastrophicEvents - a.catastrophicEvents || b.worstEventSeverity - a.worstEventSeverity || a.profileId.localeCompare(b.profileId));
   const first = eligible[0]; if (!first) return [];
   return eligible.filter((player) => player.donkeyScore === first.donkeyScore && player.counters.losses === first.counters.losses && player.catastrophicEvents === first.catastrophicEvents && player.worstEventSeverity === first.worstEventSeverity);
 }

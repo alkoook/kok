@@ -5,7 +5,7 @@ const nav = [
   { to: '/', label: 'الرئيسية', icon: Gamepad2 },
   { to: '/history', label: 'المباريات', icon: History },
   { to: '/stats', label: 'إحصائيات', icon: BarChart3 },
-  { to: '/weekly-donkey', label: '🐴 حمار الأسبوع', icon: Trophy },
+  { to: '/weekly-donkey', label: '👑 الأسبوع', icon: Trophy },
   { to: '/settings', label: 'الإعدادات', icon: Settings }
 ];
 

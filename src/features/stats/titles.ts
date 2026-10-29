@@ -1,6 +1,7 @@
 import { calculateLikhaPlayerStats } from '../../games/likha/stats';
 import { playerStats } from '../../players/roster';
 import type { GameRound, GameSession, PlayerProfile } from '../../types';
+import { calculateGameBanterAwards, type BanterAwardId } from '../../results/banterAwards';
 
 export type StatsAward = { id: string; emoji: string; title: string; profileIds: string[]; reason: string; tone: 'glory' | 'roast' };
 
@@ -25,5 +26,15 @@ export function calculateStatsAwards(profiles: PlayerProfile[], games: GameSessi
   const ten = leaders(likha, (row) => row.tenDiamonds, (row) => row.tenDiamonds > 0); add('ten-hunter', '♦', 'صياد العشرة', ten, (row) => row.profileId, `${ten[0]?.tenDiamonds ?? 0} عشرات`, 'glory');
   const lucky = leaders(likha, (row) => row.positiveTenPoints, (row) => row.positiveTenPoints > 0); add('lucky', '🍀', 'محظوظ القعدة', lucky, (row) => row.profileId, `+${lucky[0]?.positiveTenPoints ?? 0} من العشرة`, 'glory');
   const grave = leaders(likha, (row) => row.averageFinalScore, (row) => row.games >= 2, 'min'); add('grave-digger', '🪦', 'حفّار قبره بإيده', grave, (row) => row.profileId, `متوسط ليخة ${Math.round(grave[0]?.averageFinalScore ?? 0)}`, 'roast');
+  const gameAwards = games.filter((game) => game.status === 'completed').flatMap((game) => calculateGameBanterAwards(game, rounds).map((award) => ({ award, profileId: game.players.find((player) => player.id === award.playerId)?.profileId }))).filter((item): item is { award: ReturnType<typeof calculateGameBanterAwards>[number]; profileId: string } => Boolean(item.profileId));
+  const awardDefinitions: Array<{ id: BanterAwardId; emoji: string; title: string }> = [
+    { id: 'donkey-dick', emoji: '🐴', title: 'إير الحمار' }, { id: 'dog-ass', emoji: '🐕', title: 'طيز الكلب' },
+    { id: 'sheep-cunt', emoji: '🐑', title: 'كس النعجة' }, { id: 'my-ass-cheek', emoji: '🍑', title: 'فردة طيزي' }, { id: 'the-shit', emoji: '💩', title: 'الخرية' }
+  ];
+  awardDefinitions.forEach((definition) => {
+    const counts = new Map<string, number>(); gameAwards.filter((item) => item.award.id === definition.id).forEach((item) => counts.set(item.profileId, (counts.get(item.profileId) ?? 0) + 1));
+    const maximum = Math.max(0, ...counts.values()); if (!maximum) return;
+    awards.push({ id: `banter-${definition.id}`, emoji: definition.emoji, title: definition.title, profileIds: [...counts].filter(([, count]) => count === maximum).map(([id]) => id), reason: `${maximum} مرة من نتائج فعلية`, tone: 'roast' });
+  });
   return awards;
 }

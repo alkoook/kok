@@ -49,11 +49,11 @@ const pools: ReactionPool[] = [
 ];
 
 const partnershipMessages = [
-  'وشريكك عم يراجع كل قراراته اللي وصلته لعندك.',
-  'الشراكة تضامن بالمصايب، بس إنت عم تعمل المصيبة كاملة.',
-  'شريكك ما أكل الورقة، بس أكل النتيجة معك.',
-  'الفريق فريقين: شريكك عم يلعب وإنت عم تحفر.',
-  'وصلت الضربة لشريكك وهو ما قرب عالورقة.'
+  (partnerName: string) => `و${partnerName} شريكك عم يراجع كل قراراته اللي وصلته لعندك.`,
+  (partnerName: string) => `الشراكة تضامن بالمصايب، و${partnerName} شريكك أكل النتيجة معك.`,
+  (partnerName: string) => `${partnerName} ما أكل الورقة، بس أكل النتيجة معك.`,
+  (partnerName: string) => `الفريق فريقين: ${partnerName} عم يلعب وإنت عم تحفر.`,
+  (partnerName: string) => `وصلت الضربة لـ${partnerName} وهو ما قرب عالورقة.`
 ];
 
 export const LIKHA_REACTION_COUNT = pools.reduce((sum, pool) => sum + pool.messages.length, 0) + partnershipMessages.length;
@@ -75,6 +75,7 @@ export function selectLikhaReaction(input: LikhaRoundInput, delta: Record<string
     ?? { event: 'general', playerId: input.players[0].playerId, pool: pools.find((pool) => pool.event === 'general')! };
   const options = selected.pool.messages.map((message, index) => ({ id: `${selected.event}-${index}`, message })).filter((item) => item.id !== previousId);
   const choice = options[Math.floor(Math.random() * options.length)] ?? { id: `${selected.event}-0`, message: selected.pool.messages[0] };
-  const partnerSuffix = partnerName ? ` ${partnershipMessages[Math.floor(Math.random() * partnershipMessages.length)].replace('شريكك', partnerName)}` : '';
+  const partnerMessage = partnershipMessages[Math.floor(Math.random() * partnershipMessages.length)];
+  const partnerSuffix = partnerName && partnerMessage ? ` ${partnerMessage(partnerName)}` : '';
   return { ...choice, message: `${choice.message}${partnerSuffix}`, event: selected.event, playerId: selected.playerId, durationMs: selected.pool.durationMs, tone: selected.pool.tone };
 }

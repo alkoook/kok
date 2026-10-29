@@ -11,13 +11,14 @@ import { MessageSettings } from '../../components/settings/MessageSettings';
 import { SummaryContentSettings } from '../../components/settings/SummaryContentSettings';
 import { ConditionalMessageSettings } from '../../components/settings/ConditionalMessageSettings';
 import { AudioSettings } from '../../components/settings/AudioSettings';
+import { TelegramSettings } from '../../components/settings/TelegramSettings';
 import { Link } from 'react-router-dom';
 import { clearAllData, db, exportBackup, importBackup, isValidBackup } from '../../db/database';
 import { DEFAULT_TRIX_RULES } from '../../games/trix/rules';
 import type { BackupFile, GameType, TrixRules } from '../../types';
 
-type Tab = 'appearance' | 'rules' | 'messages' | 'audio' | 'data' | 'about';
-const tabs: { id: Tab; label: string }[] = [{ id: 'appearance', label: 'المظهر' }, { id: 'rules', label: 'القواعد' }, { id: 'messages', label: 'الرسائل' }, { id: 'audio', label: 'الصوت' }, { id: 'data', label: 'البيانات' }, { id: 'about', label: 'عن KOK' }];
+type Tab = 'appearance' | 'rules' | 'messages' | 'audio' | 'telegram' | 'data' | 'about';
+const tabs: { id: Tab; label: string }[] = [{ id: 'appearance', label: 'المظهر' }, { id: 'rules', label: 'القواعد' }, { id: 'messages', label: 'الرسائل' }, { id: 'audio', label: 'الصوت' }, { id: 'telegram', label: 'Telegram' }, { id: 'data', label: 'البيانات' }, { id: 'about', label: 'عن KOK' }];
 
 export function SettingsPage() {
   const settings = useLiveQuery(() => db.settings.get('main'));
@@ -34,6 +35,7 @@ export function SettingsPage() {
     {tab === 'data' && <SettingsSection icon={<Database/>} title="البيانات"><div className="grid gap-2"><Button variant="secondary" icon={<Download size={18}/>} onClick={download}>تصدير نسخة احتياطية</Button><Button variant="secondary" icon={<Upload size={18}/>} onClick={() => inputRef.current?.click()}>استيراد نسخة احتياطية</Button><input ref={inputRef} className="hidden" type="file" accept="application/json,.json" onChange={readImport}/><Button variant="danger" icon={<Trash2 size={18}/>} onClick={() => setClearOpen(true)}>حذف جميع البيانات</Button></div></SettingsSection>}
     {tab === 'messages' && <><MessageSettings/><ConditionalMessageSettings/><SummaryContentSettings/></>}
     {tab === 'audio' && <AudioSettings/>}
+    {tab === 'telegram' && <TelegramSettings/>}
     {tab === 'about' && <SettingsSection icon={<Info/>} title="عن KOK"><div className="mb-5 flex justify-center"><KokLogo size="medium"/></div><p className="text-center font-black">{APP_CONFIG.description} — الإصدار {APP_CONFIG.version}</p><div className="mt-4 rounded-2xl bg-mint-500/10 p-4 text-sm"><strong className="block text-mint-700 dark:text-mint-300">خصوصيتك أولًا</strong><span>كل مبارياتك محفوظة على جهازك فقط. لا حسابات، لا تتبع، ولا إعلانات.</span></div><details className="mt-3 rounded-2xl border border-[var(--border)] p-4"><summary className="cursor-pointer font-bold">تثبيت التطبيق يدويًا</summary><p className="muted mt-2">في Chrome على Android: ⋮ ← إضافة إلى الشاشة الرئيسية ← تثبيت التطبيق.</p></details></SettingsSection>}
     <Modal open={Boolean(incoming)} title="استيراد البيانات" onClose={() => setIncoming(undefined)}><p className="muted mb-5">الملف صالح. اختر طريقة الاستيراد:</p><div className="space-y-2"><Button className="w-full" onClick={async () => { if (!incoming) return; await importBackup(incoming, 'merge'); setIncoming(undefined); toast('تم دمج البيانات'); }}>دمج مع البيانات الحالية</Button><Button className="w-full" variant="danger" onClick={async () => { if (!incoming) return; await importBackup(incoming, 'replace'); setIncoming(undefined); toast('تم استبدال البيانات'); }}>استبدال جميع البيانات</Button><Button className="w-full" variant="ghost" onClick={() => setIncoming(undefined)}>إلغاء</Button></div></Modal>
     <Modal open={clearOpen} title="حذف جميع البيانات؟" onClose={() => setClearOpen(false)}><p className="muted mb-5">سيتم حذف المباريات والجولات والأسماء والإعدادات من هذا الجهاز.</p><div className="grid grid-cols-2 gap-3"><Button variant="secondary" onClick={() => setClearOpen(false)}>إلغاء</Button><Button variant="danger" onClick={async () => { await clearAllData(); setClearOpen(false); toast('تم حذف جميع البيانات'); }}>حذف نهائيًا</Button></div></Modal>

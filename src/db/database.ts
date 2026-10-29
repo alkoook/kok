@@ -3,12 +3,14 @@ import { aggregatePartnershipScores, calculateTrixRound, validateKingdomBalance,
 import { DEFAULT_TRIX_RULES, FAST_CONTRACTS, SLOW_CONTRACTS } from '../games/trix/rules';
 import { createUnconfirmedTarneebRules } from '../games/tarneeb/rules';
 import { calculateTarneeb41Round, calculateTarneeb61Round, deriveTarneeb41PlayerPhases, determineTarneeb41Winner, determineTarneebWinner } from '../games/tarneeb/scoring';
-import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleFiring, ContentOverride, GameRound, GameSession, LikhaRoundInput, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TrixRoundInput } from '../types';
+import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleFiring, ContentOverride, GameRound, GameSession, LikhaRoundInput, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TelegramOutboxItem, TrixRoundInput } from '../types';
 import { isTrix, uid } from '../utils';
 import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashInput } from '../games/fast/scoring';
 import type { LashRoundInput, MessageRule, TrixRankingInput } from '../types';
 import type { AudioEventMapping, UploadedAudioAsset } from '../audio/types';
 import { aggregateLikhaTeamScores, calculateLikhaRound, isLikhaGameFinished, rankLikhaPlayers } from '../games/likha/engine';
+import { currentWinnerIds } from '../results/standings';
+import { buildTelegramGameResult } from '../telegram/resultComposer';
 
 class KokDatabase extends Dexie {
   games!: EntityTable<GameSession, 'id'>;
@@ -22,6 +24,7 @@ class KokDatabase extends Dexie {
   conditionalRuleFirings!: EntityTable<ConditionalRuleFiring, 'id'>;
   audioAssets!: EntityTable<UploadedAudioAsset, 'id'>;
   audioEventMappings!: EntityTable<AudioEventMapping, 'event'>;
+  telegramOutbox!: EntityTable<TelegramOutboxItem, 'id'>;
 
   constructor() {
     // الاسم الداخلي القديم محفوظ عمداً كي لا تضيع بيانات مستخدمي V1.
@@ -93,11 +96,19 @@ class KokDatabase extends Dexie {
       contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
       conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt'
     });
+    // V9 adds a durable outbox only. No historic game or round is rewritten.
+    this.version(9).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event',
+      contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
+      conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt',
+      telegramOutbox: 'id, &[gameId+resultRevision], status, nextAttemptAt, createdAt, sentAt'
+    });
   }
 }
 
 export const db = new KokDatabase();
-export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, roastIntensity: 4, soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1, onboardingSeen: false };
+export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, roastIntensity: 4, soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1, telegramAutoSend: false, onboardingSeen: false };
 
 const initialPresets = (): RulePreset[] => {
   const now = new Date().toISOString();
@@ -117,6 +128,7 @@ export async function initializeDatabase() {
     if (settings && settings.preferredTarneebTarget === undefined) await db.settings.update('main', { preferredTarneebTarget: 61, contextualMessages: true });
     if (settings && settings.roastIntensity === undefined) await db.settings.update('main', { roastIntensity: 4 });
     if (settings && settings.soundEnabled === undefined) await db.settings.update('main', { soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1 });
+    if (settings && settings.telegramAutoSend === undefined) await db.settings.update('main', { telegramAutoSend: false });
     for (const preset of initialPresets()) if (!(await db.presets.get(preset.id))) await db.presets.add(preset);
     for (const id of ['trix-slow', 'trix-fast'] as const) {
       const preset = await db.presets.get(id);
@@ -138,6 +150,31 @@ export async function createGame(session: GameSession) {
     }
     await db.settings.update('main', { lastActiveGameId: session.id });
   });
+}
+
+export async function enqueueTelegramResult(gameId: string, correction = false) {
+  const [game, settings, rounds] = await Promise.all([db.games.get(gameId), db.settings.get('main'), db.rounds.where('gameId').equals(gameId).sortBy('index')]);
+  if (!game || game.status !== 'completed' || !settings?.telegramAutoSend || !settings.telegramBotToken?.trim() || !settings.telegramChatId?.trim()) return undefined;
+  const result = buildTelegramGameResult(game, rounds, correction); const now = new Date().toISOString(); const id = `${game.id}:${result.snapshot.resultRevision}`;
+  const existing = await db.telegramOutbox.get(id);
+  const item: TelegramOutboxItem = existing ? { ...existing, messageText: result.plainText, resultSnapshot: result.snapshot, updatedAt: now, status: existing.status === 'sent' ? 'sent' : 'pending', nextAttemptAt: undefined, lastError: existing.status === 'sent' ? existing.lastError : undefined } : { id, gameId: game.id, gameType: game.gameType, resultRevision: result.snapshot.resultRevision, messageText: result.plainText, resultSnapshot: result.snapshot, createdAt: now, updatedAt: now, status: 'pending', attemptCount: 0 };
+  await db.telegramOutbox.put(item);
+  if (typeof window !== 'undefined') queueMicrotask(() => { void import('../telegram/lifecycle').then(({ registerTelegramBackgroundSync }) => registerTelegramBackgroundSync()); void import('../telegram/outbox').then(({ flushTelegramOutbox }) => flushTelegramOutbox()); });
+  return item;
+}
+
+/** Finalizes exactly the last persisted score. The active-status guard makes rapid double confirmation idempotent. */
+export async function finalizeGameEarly(gameId: string) {
+  const result = await db.transaction('rw', db.games, db.settings, async () => {
+    const game = await db.games.get(gameId); if (!game) throw new Error('المباراة غير موجودة');
+    if (game.status !== 'active') return { game, finalized: false };
+    const now = new Date().toISOString(); const winnerIds = currentWinnerIds(game); const resultRevision = Math.max(1, game.resultRevision ?? 1);
+    await db.games.update(gameId, { status: 'completed', finishReason: 'manual_early_finish', finishedAt: now, updatedAt: now, winnerIds, resultRevision });
+    const settings = await db.settings.get('main'); if (settings?.lastActiveGameId === gameId) await db.settings.update('main', { lastActiveGameId: undefined });
+    return { game: (await db.games.get(gameId))!, finalized: true };
+  });
+  const queued = result.finalized ? await enqueueTelegramResult(gameId) : undefined;
+  return { ...result, queued };
 }
 
 const sumScores = (base: Record<string, number>, delta: Record<string, number>, allowNegative = true) =>
@@ -237,7 +274,9 @@ async function recomputeGameInTransaction(gameId: string) {
   const now = new Date().toISOString();
   await db.games.update(gameId, {
     scores, currentRound: rounds.length, updatedAt: now, status: completion.status, winnerIds: completion.winnerIds,
-    finishedAt: completion.status === 'completed' ? game.finishedAt ?? now : undefined
+    finishedAt: completion.status === 'completed' ? game.finishedAt ?? now : undefined,
+    finishReason: completion.status === 'completed' ? game.finishReason ?? 'natural' : undefined,
+    resultRevision: completion.status === 'completed' ? game.resultRevision ?? 1 : game.resultRevision
   });
   if (completion.status === 'completed') {
     const settings = await db.settings.get('main');
@@ -247,7 +286,9 @@ async function recomputeGameInTransaction(gameId: string) {
 }
 
 export async function recomputeGame(gameId: string) {
-  return db.transaction('rw', db.games, db.rounds, db.settings, () => recomputeGameInTransaction(gameId));
+  const game = await db.transaction('rw', db.games, db.rounds, db.settings, () => recomputeGameInTransaction(gameId));
+  if (game?.status === 'completed') await enqueueTelegramResult(gameId);
+  return game;
 }
 
 function normalizeNewRound(game: GameSession, round: Omit<GameRound, 'id' | 'index' | 'scoreAfter' | 'createdAt'>) {
@@ -279,7 +320,7 @@ function normalizeNewRound(game: GameSession, round: Omit<GameRound, 'id' | 'ind
 }
 
 export async function addRound(round: Omit<GameRound, 'id' | 'index' | 'scoreAfter' | 'createdAt'>) {
-  return db.transaction('rw', db.games, db.rounds, db.settings, async () => {
+  const saved = await db.transaction('rw', db.games, db.rounds, db.settings, async () => {
     const game = await db.games.get(round.gameId);
     if (!game || game.status !== 'active') throw new Error('لا يمكن إضافة جولة لهذه المباراة');
     const normalized = normalizeNewRound(game, round);
@@ -299,19 +340,28 @@ export async function addRound(round: Omit<GameRound, 'id' | 'index' | 'scoreAft
     await recomputeGameInTransaction(game.id);
     return saved;
   });
+  const completed = await db.games.get(round.gameId); if (completed?.status === 'completed') await enqueueTelegramResult(round.gameId);
+  return saved;
 }
 
 export async function replaceRound(roundId: string, updates: Pick<GameRound, 'input' | 'scoreDelta' | 'type' | 'note'>) {
-  return db.transaction('rw', db.games, db.rounds, db.settings, async () => {
+  const previousRound = await db.rounds.get(roundId); const previousGame = previousRound ? await db.games.get(previousRound.gameId) : undefined;
+  const updated = await db.transaction('rw', db.games, db.rounds, db.settings, async () => {
     const round = await db.rounds.get(roundId);
     if (!round) throw new Error('الجولة غير موجودة');
     await db.rounds.update(roundId, updates);
     return recomputeGameInTransaction(round.gameId);
   });
+  if (updated?.status === 'completed') {
+    const latest = await db.telegramOutbox.where('gameId').equals(updated.id).reverse().sortBy('resultRevision').then((items) => items.at(-1));
+    if (previousGame?.status === 'completed' && latest?.status === 'sent') { await db.games.update(updated.id, { resultRevision: (updated.resultRevision ?? 1) + 1 }); await enqueueTelegramResult(updated.id, true); }
+    else await enqueueTelegramResult(updated.id);
+  }
+  return updated;
 }
 
 export async function undoLastRound(gameId: string) {
-  return db.transaction('rw', db.games, db.rounds, db.settings, db.conditionalRuleFirings, async () => {
+  await db.transaction('rw', db.games, db.rounds, db.settings, db.conditionalRuleFirings, async () => {
     const rounds = await db.rounds.where('gameId').equals(gameId).sortBy('index');
     const last = rounds.at(-1);
     if (!last) return;
@@ -319,6 +369,8 @@ export async function undoLastRound(gameId: string) {
     await db.conditionalRuleFirings.where('gameId').equals(gameId).filter((firing) => firing.roundIndex >= last.index).delete();
     await recomputeGameInTransaction(gameId);
   });
+  const game = await db.games.get(gameId); if (game?.status === 'completed') await enqueueTelegramResult(gameId);
+  else await db.telegramOutbox.where('gameId').equals(gameId).filter((item) => item.status !== 'sent').delete();
 }
 
 export async function deleteGame(gameId: string) {
@@ -333,7 +385,8 @@ export async function deleteGame(gameId: string) {
 
 export async function exportBackup(): Promise<BackupFile> {
   const [games, rounds, players, presets, settings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings] = await Promise.all([db.games.toArray(), db.rounds.toArray(), db.players.toArray(), db.presets.toArray(), db.settings.toArray(), db.messageRules.toArray(), db.contentOverrides.toArray(), db.conditionalRules.toArray(), db.conditionalRuleFirings.toArray()]);
-  return { app: 'KOK', version: 5, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings } };
+  const safeSettings = settings.map(withoutTelegramSecrets);
+  return { app: 'KOK', version: 5, exportedAt: new Date().toISOString(), data: { games, rounds, players, presets, settings: safeSettings, messageRules, contentOverrides, conditionalRules, conditionalRuleFirings } };
 }
 
 export function isValidBackup(value: unknown): value is BackupFile {
@@ -349,6 +402,7 @@ export function isValidBackup(value: unknown): value is BackupFile {
 
 export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace') {
   await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides, db.conditionalRules, db.conditionalRuleFirings], async () => {
+    const localSettings = await db.settings.get('main');
     if (mode === 'replace') await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear(), db.conditionalRules.clear(), db.conditionalRuleFirings.clear()]);
     await db.games.bulkPut(backup.data.games);
     await db.rounds.bulkPut(backup.data.rounds);
@@ -359,7 +413,8 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
       else await db.players.put(player);
     }
     await db.presets.bulkPut(backup.data.presets);
-    await db.settings.bulkPut(backup.data.settings);
+    const safeSettings = backup.data.settings.map((setting) => ({ ...withoutTelegramSecrets(setting), telegramBotToken: localSettings?.telegramBotToken, telegramChatId: localSettings?.telegramChatId, telegramThreadId: localSettings?.telegramThreadId, telegramAutoSend: localSettings?.telegramAutoSend, telegramBotUsername: localSettings?.telegramBotUsername } as AppSettings));
+    await db.settings.bulkPut(safeSettings);
     if (backup.data.messageRules?.length) await db.messageRules.bulkPut(backup.data.messageRules);
     if (backup.data.contentOverrides?.length) await db.contentOverrides.bulkPut(backup.data.contentOverrides);
     if (backup.data.conditionalRules?.length) await db.conditionalRules.bulkPut(backup.data.conditionalRules);
@@ -368,9 +423,13 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
   await initializeDatabase();
 }
 
+function withoutTelegramSecrets(setting: AppSettings): AppSettings {
+  const safe = { ...setting }; delete safe.telegramBotToken; delete safe.telegramChatId; delete safe.telegramThreadId; return safe;
+}
+
 export async function clearAllData() {
-  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides, db.conditionalRules, db.conditionalRuleFirings, db.audioAssets, db.audioEventMappings], async () => {
-    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear(), db.conditionalRules.clear(), db.conditionalRuleFirings.clear(), db.audioAssets.clear(), db.audioEventMappings.clear()]);
+  await db.transaction('rw', [db.games, db.rounds, db.players, db.presets, db.settings, db.messageRules, db.contentOverrides, db.conditionalRules, db.conditionalRuleFirings, db.audioAssets, db.audioEventMappings, db.telegramOutbox], async () => {
+    await Promise.all([db.games.clear(), db.rounds.clear(), db.players.clear(), db.presets.clear(), db.settings.clear(), db.messageRules.clear(), db.contentOverrides.clear(), db.conditionalRules.clear(), db.conditionalRuleFirings.clear(), db.audioAssets.clear(), db.audioEventMappings.clear(), db.telegramOutbox.clear()]);
   });
   await initializeDatabase();
 }
