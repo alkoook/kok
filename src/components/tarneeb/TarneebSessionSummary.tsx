@@ -32,7 +32,7 @@ export function TarneebSessionSummaryView({ summary, records = [], sessionNumber
 
     {summary.scoreTimeline.length > 1 && <section className="surface p-5"><div className="mb-4 flex items-center gap-2"><Target className="text-mint-600" size={20}/><h2 className="text-xl font-black">تطور النتيجة</h2></div><ScoreTimeline summary={summary}/>{summary.comeback && <div className="mt-3 rounded-2xl bg-orange-500/10 p-3 text-sm font-black text-orange-700 dark:text-orange-300">🔥 {summary.teams.find((team) => team.id === summary.comeback?.teamId)?.name} رجع من فارق {summary.comeback.deficit} وفاز</div>}</section>}
 
-    <div className="grid gap-3 sm:grid-cols-2">{summary.featuredMoment && <MomentCard title="لحظة القعدة" icon="🔥" text={summary.featuredMoment.text} glory/>}{summary.featuredRoast && <MomentCard title="فضيحة القعدة" icon="😂" text={summary.featuredRoast.text}/>}</div>
+    <div className="grid gap-3 sm:grid-cols-2">{summary.featuredMoment && <MomentCard title="لحظة القعدة" icon="🔥" text={summary.featuredMoment.text} glory/>}{summary.featuredRoast && <MomentCard title="أكبر تعثر" icon="📉" text={summary.featuredRoast.text}/>}</div>
     <section className="rounded-3xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-5 text-center"><Trophy className="mx-auto mb-2 text-amber-500"/><p className="font-black leading-7">{summary.verdict}</p></section>
     <Button className="w-full" size="lg" icon={sharing || !shareBlob ? <Download size={19}/> : <Share2 size={19}/>} disabled={sharing || !shareBlob} onClick={share}>{sharing ? 'جارٍ فتح المشاركة…' : shareBlob ? 'شارك ملخص القعدة' : 'جارٍ تجهيز بطاقة المشاركة…'}</Button>
   </div>;

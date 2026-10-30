@@ -4,7 +4,7 @@ import { db, initializeDatabase } from '../db/database';
 import type { TelegramOutboxItem } from '../types';
 import { flushTelegramOutbox } from './outbox';
 
-const item = (messageText = 'نتيجة'): TelegramOutboxItem => ({ id: 'g:1', gameId: 'g', gameType: 'likha', resultRevision: 1, messageText, resultSnapshot: { gameId: 'g', gameType: 'likha', resultRevision: 1, correction: false, finishReason: 'natural', finishedAt: new Date().toISOString(), players: [], standings: [], winnerIds: [], roundCount: 1 }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), status: 'pending', attemptCount: 0 });
+const item = (messageText = 'نتيجة'): TelegramOutboxItem => ({ id: 'g:1', kind: 'game_result_auto', sourceKey: 'g:1', gameId: 'g', gameType: 'likha', resultRevision: 1, messageText, resultSnapshot: { gameId: 'g', gameType: 'likha', resultRevision: 1, correction: false, finishReason: 'natural', finishedAt: new Date().toISOString(), players: [], standings: [], winnerIds: [], roundCount: 1 }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), status: 'pending', attemptCount: 0 });
 describe('Telegram outbox', () => {
   beforeEach(async () => { await db.delete(); await db.open(); await initializeDatabase(); await db.settings.update('main', { telegramBotToken: 't', telegramChatId: 'c' }); });
   afterEach(async () => { vi.unstubAllGlobals(); db.close(); });

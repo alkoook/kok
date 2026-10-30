@@ -1,7 +1,7 @@
 import type { AudioPlaybackMode } from '../audio/types';
 import type { LikhaMode, LikhaRoundInput, LikhaRules } from '../games/likha/types';
 
-export type { LikhaMode, LikhaRoundInput, LikhaRules, LikhaSpecialCard, LikhaSpecialCapture, LikhaPlayerCapture, LikhaRanking } from '../games/likha/types';
+export type { LikhaMode, LikhaRoundInput, LikhaRules, LikhaSpecialCard, LikhaSpecialCapture, LikhaPlayerCapture, LikhaPartnershipRound, LikhaRanking } from '../games/likha/types';
 
 export type GameType = 'trix-slow' | 'trix-fast' | 'cc' | 'tarneeb-61' | 'tarneeb-41' | 'likha';
 export type GameStatus = 'active' | 'completed' | 'cancelled';
@@ -218,12 +218,15 @@ export type AppSettings = {
   telegramChatId?: string;
   telegramThreadId?: string;
   telegramAutoSend?: boolean;
+  telegramWeeklyAutoSend?: boolean;
+  telegramWeeklyReportKeys?: string[];
   telegramBotUsername?: string;
   telegramLastError?: string;
   telegramLastSentAt?: string;
 };
 
 export type TelegramOutboxStatus = 'pending' | 'sending' | 'sent' | 'failed_retryable' | 'failed_permanent';
+export type TelegramOutboxKind = 'game_result_auto' | 'game_result_manual' | 'weekly_report_auto' | 'weekly_report_manual' | 'weekly_hero_manual' | 'weekly_donkey_manual';
 export type TelegramResultSnapshot = {
   gameId: string;
   gameType: GameType;
@@ -238,11 +241,13 @@ export type TelegramResultSnapshot = {
 };
 export type TelegramOutboxItem = {
   id: string;
-  gameId: string;
-  gameType: GameType;
-  resultRevision: number;
+  kind: TelegramOutboxKind;
+  sourceKey?: string;
+  gameId?: string;
+  gameType?: GameType;
+  resultRevision?: number;
   messageText: string;
-  resultSnapshot: TelegramResultSnapshot;
+  resultSnapshot?: TelegramResultSnapshot;
   createdAt: string;
   updatedAt: string;
   status: TelegramOutboxStatus;

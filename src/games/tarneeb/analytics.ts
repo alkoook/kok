@@ -277,7 +277,7 @@ export function generateTarneeb61Verdict(game: GameSession, stats: TarneebPlayer
   if (comeback) return 'الحكم النهائي: اللي طلع من القعدة قبل النهاية خسر أحلى قلبة 😂';
   if (failures >= 5) return 'الحكم النهائي: القعدة كانت اختبار أعصاب أكتر من إنها شدة.';
   const scores = game.teams?.map((team) => game.scores[team.id] ?? 0) ?? []; const gap = scores.length === 2 ? Math.abs(scores[0] - scores[1]) : 0;
-  if (gap >= 20) return 'الحكم النهائي: دعس رسمي ومافي مجال للاعتراض 🐾';
+  if (gap >= 20) return 'الحكم النهائي: فوز واضح وما في مجال للاعتراض.';
   return 'الحكم النهائي: الورق خلص، بس الحكي عن القعدة لسا بأوله.';
 }
 

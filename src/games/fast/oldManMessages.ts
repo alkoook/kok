@@ -2,111 +2,70 @@ import type { MessageEvent, MessageRule } from '../../types';
 
 export type OldManFactoryCategory = NonNullable<MessageRule['oldManCategory']>;
 type Frame = { template: string; intensity: 1 | 2 | 3 | 4 };
-type Blueprint = {
-  category: OldManFactoryCategory;
-  count: number;
-  event: MessageEvent;
-  doubled?: boolean;
-  minOccurrences?: number;
-  historicalRecord?: boolean;
-  priority: number;
-  durationMs: number;
-  frames: Frame[];
-  facts: string[];
-};
+type Blueprint = { category: OldManFactoryCategory; count: number; event: MessageEvent; doubled?: boolean; minOccurrences?: number; historicalRecord?: boolean; priority: number; durationMs: number; frames: Frame[]; facts: string[] };
 
 const normalFrames: Frame[] = [
   { template: '{fact}', intensity: 1 }, { template: 'عاجل من قلب القعدة: {fact}', intensity: 1 },
-  { template: 'المحضر الرسمي كتبها بلا رتوش: {fact}', intensity: 2 }, { template: 'المعلّق شهق وقال: {fact}', intensity: 2 },
-  { template: 'تقرير الصيانة بعد فحص اللعب: {fact}', intensity: 3 }, { template: 'نشرة الطيز المسائية أعلنت: {fact}', intensity: 3 },
+  { template: 'المحضر الرسمي كتبها بلا رتوش: {fact}', intensity: 2 }, { template: 'المعلّق توقف وقال: {fact}', intensity: 2 },
+  { template: 'تقرير الجولة بعد مراجعة اللعب: {fact}', intensity: 3 }, { template: 'النشرة المسائية أعلنت: {fact}', intensity: 3 },
   { template: 'بعد مراجعة الإعادة البطيئة ثبت أن {fact}', intensity: 3 }, { template: 'يا جماعة بلا فلسفة، {fact}', intensity: 4 },
-  { template: 'التشخيص النهائي لهالمصيبة: {fact}', intensity: 4 }, { template: 'كس هالحظ، الكاميرا وثقت أن {fact}', intensity: 4 }
+  { template: 'التشخيص النهائي لهذه الجولة: {fact}', intensity: 4 }, { template: 'الكاميرا وثقت أن {fact}', intensity: 4 }
 ];
 const roleFrames = normalFrames.slice(0, 8);
 const shortFrames = normalFrames.slice(0, 6);
 const historicalFrames = [normalFrames[1], normalFrames[2], normalFrames[7], normalFrames[9]];
 
 const blueprints: Blueprint[] = [
-  {
-    category: 'normal', count: 50, event: 'old-man', priority: 50, durationMs: 5200, frames: normalFrames,
-    facts: [
-      '{player} بلع الختيار وفتح بطيزو شباك خدمة سريع.', 'الختيار شاف {player} وقال: هاد الإيري بعرفو، فوتوني.',
-      'طيز {player} اشتغلت GPS والختيار وصل بلا ما يسأل حدا.', '{player} ما أكل الختيار؛ الختيار اختار يسكن عنده بالإيجار.',
-      'اللعب عند {player} صار بوفيه، والختيار أول واحد عالدور.'
-    ]
-  },
-  {
-    category: 'doubled', count: 50, event: 'old-man', doubled: true, priority: 60, durationMs: 7600, frames: normalFrames,
-    facts: [
-      '{player} أكل الختيار مدبل؛ إير واحد ما عاد مكفي هالمصيبة.', 'الختيار المدبل فات بطيز {player} وهو حامل بطاقة VIP.',
-      'التدبيل حوّل غلطة {player} من خرا عادي لمهرجان خرا رسمي.', '{player} جمع الختيار والتدبيل والفضيحة بضربة وحدة مرتبة.',
-      'الختيار وصل مدبل، وطيز {player} فتحتله مسربين بدل واحد.'
-    ]
-  },
-  {
-    category: 'owner', count: 40, event: 'old-man-owner', doubled: false, priority: 50, durationMs: 5600, frames: roleFrames,
-    facts: [
-      'الملك {owner} أكل الختيار بمملكته وصار التاج غطا طنجرة.', '{owner} فتح المملكة للختيار وبعدين بلعه متل الحمار.',
-      'صاحب المملكة خرّب عرشه بإيده وحط الختيار بطيزو ختم ملكي.', 'التاج فوق راس {owner} والختيار تحتو عامل اعتصام.',
-      '{owner} سمّى المملكة باسمه وبآخرها أكل الختيار كأنه الإنجاز الرسمي.'
-    ]
-  },
-  {
-    category: 'owner-doubled', count: 50, event: 'old-man-owner', doubled: true, priority: 60, durationMs: 10000, frames: normalFrames,
-    facts: [
-      '{owner} أكل الختيار مدبل بمملكته؛ الملك صار خازوق متحرك.', 'التاج وقع من هول المنظر والختيار المدبل ظل ثابت بطيز {owner}.',
-      'مملكة {owner} أعلنت الإفلاس بعد ما بلع الختيار مدبل وابتسم.', 'صاحب العرش دبّل الخرا على حاله ووقّع الاستلام باسم {owner}.',
-      '{owner} عمل من مملكته موقف مجاني للختيار المدبل، يا إير هالإدارة.'
-    ]
-  },
-  {
-    category: 'partner', count: 30, event: 'old-man-partner', priority: 50, durationMs: 5400, frames: shortFrames,
-    facts: [
-      '{player} أكل الختيار وترك {owner} يشيل خرا الشراكة لحاله.', 'شريك الملك بلع الختيار وصار الفريق شركة مساهمة بالفضيحة.',
-      '{owner} لعب ملك، و{player} لعب فتحة تصريف للختيار.', 'الشريك قرر يساعد المملكة فحط الختيار بطيزو بدل النقاط.',
-      'عقد الشراكة مع {player} صار بحاجة بند يمنع أكل الختيار.'
-    ]
-  },
-  {
-    category: 'opponent', count: 30, event: 'old-man-opponent', priority: 50, durationMs: 5200, frames: shortFrames,
-    facts: [
-      '{player} من الخصم أكل الختيار، وفريق {team} شمّ الهوا النظيف شوي.', 'الختيار عبر للخصم وصفّ بطيز {player} كأنه حاجز مكان.',
-      'المصيبة نزلت عند {opponentTeam} و{player} وقّع الاستلام.', 'الخصم بلع الختيار، وصاحب المملكة قال: خليه يلحس هالمرة بعيد.',
-      '{player} فتح بوفيه بالجهة الثانية والختيار وصل أول زبون.'
-    ]
-  },
-  {
-    category: 'repeat', count: 40, event: 'old-man', minOccurrences: 2, priority: 80, durationMs: 6200, frames: roleFrames,
-    facts: [
-      '{player} أكل الختيار للمرة {oldManCount}؛ طيزو صارت فرع دائم.', 'رجع الختيار لعند {player} للمرة {oldManCount} لأنه حافظ المدخل.',
-      'المرة {oldManCount} وما زال {player} يمثل دور المتفاجئ، يا خرا الذكاء.', '{player} عم يجمع ختايرة كأنه آخر القعدة في جائزة عالغباء.',
-      'الختيار و{player} صاروا ثنائي القعدة؛ واحد بيفوت والثاني ما بيتعلم.'
-    ]
-  },
-  {
-    category: 'repeat-doubled', count: 40, event: 'old-man', doubled: true, minOccurrences: 2, priority: 90, durationMs: 9000, frames: roleFrames,
-    facts: [
-      '{player} كرر الختيار المدبل للمرة {oldManCount}؛ هاد مو حظ، هاد اشتراك بريميوم.', 'المدبل رجع لطيز {player} وكأنه ناسي شاحنته جوّا.',
-      'اختيار مدبل مرة ثانية؛ {player} عم يبني ناطحة خرا طابق فوق طابق.', 'التدبيل تكرر ونفس الإيري استلمه، ثبات يستحق شهادة فشل.',
-      '{player} كل ما يشوف الختيار مدبل بيفتحله ويقول تفضل محلك محفوظ.'
-    ]
-  },
-  {
-    category: 'magnet', count: 40, event: 'old-man', minOccurrences: 3, priority: 100, durationMs: 7600, frames: roleFrames,
-    facts: [
-      '{player} صار مغناطيس اختيار رسمي؛ العدد وصل {oldManCount} والطيز بعدها فاتحة.', 'أي اختيار يضيع بالقعدة اسألوا عنه عند {player}.',
-      'العداد وصل {oldManCount}؛ بدنا نغير اسم {player} لموقف الختيار المركزي.', 'الختيار ما عاد يلف عالطاولة، بيطلع مباشرة لعند {player}.',
-      '{player} احتكر سوق الختيار وخلى الباقي بلا مصايب.'
-    ]
-  },
-  {
-    category: 'historical', count: 20, event: 'old-man', historicalRecord: true, priority: 110, durationMs: 8200, frames: historicalFrames,
-    facts: [
-      '{player} دخل الأرشيف من أوسخ أبوابه: {oldManCount} ختايرة بقعدة واحدة.', 'سجل الختيار التاريخي انكسر على طيز {player} وبقيت الشظايا جوّا.',
-      'الرقم القياسي صار باسم {player}؛ حتى العداد قال كس هالموهبة.', 'القعدة سجلت كارثة تاريخية والختيار وقّعها فوق لعب {player}.',
-      '{player} ساوى أسوأ رقم معروف، وكأنه الفشل بطولة لازم يدافع عنها.'
-    ]
-  }
+  { category: 'normal', count: 50, event: 'old-man', priority: 50, durationMs: 5200, frames: normalFrames, facts: [
+    '{player} أخذ الختيار وفتح له مكاناً دائماً في سجله.', 'الختيار رأى {player} وقرر أن هذه وجهته.',
+    'عداد {player} استقبل الختيار بلا أي تأخير.', '{player} لم يبحث عن الختيار؛ الختيار هو الذي وجده.',
+    'اللعب عند {player} صار محطة، والختيار أول الواصلين.'
+  ] },
+  { category: 'doubled', count: 50, event: 'old-man', doubled: true, priority: 60, durationMs: 7600, frames: normalFrames, facts: [
+    '{player} أكل الختيار مدبلاً؛ ضربة واحدة لم تعد كافية.', 'الختيار المدبل وصل إلى {player} ببطاقة أولوية.',
+    'التدبيل حوّل غلطة {player} إلى حدث الجولة.', '{player} جمع الختيار والتدبيل في لقطة واحدة ثقيلة.',
+    'الختيار وصل مدبلاً، ونتيجة {player} فتحت مسارين للسالب.'
+  ] },
+  { category: 'owner', count: 40, event: 'old-man-owner', doubled: false, priority: 50, durationMs: 5600, frames: roleFrames, facts: [
+    'الملك {owner} أكل الختيار في مملكته وصار التاج بحاجة مراجعة.', '{owner} فتح المملكة للختيار ثم سجله باسمه.',
+    'صاحب المملكة أثقل عرشه بالختيار وختم الجولة باسمه.', 'التاج فوق رأس {owner} والختيار حاضر في النتيجة.',
+    '{owner} سمّى المملكة باسمه وفي نهايتها أخذ الختيار أيضاً.'
+  ] },
+  { category: 'owner-doubled', count: 50, event: 'old-man-owner', doubled: true, priority: 60, durationMs: 10000, frames: normalFrames, facts: [
+    '{owner} أكل الختيار مدبلاً في مملكته؛ العرش اهتز.', 'التاج توقف لحظة والختيار المدبل بقي في رصيد {owner}.',
+    'مملكة {owner} أعلنت حالة طوارئ بعد الختيار المدبل.', 'صاحب العرش ضاعف الأثر على نفسه وسجل الاستلام باسم {owner}.',
+    '{owner} خصص مكاناً للختيار المدبل في سجل المملكة.'
+  ] },
+  { category: 'partner', count: 30, event: 'old-man-partner', priority: 50, durationMs: 5400, frames: shortFrames, facts: [
+    '{player} أكل الختيار وترك {owner} يشارك أثر النتيجة.', 'شريك الملك أخذ الختيار وصار الفريق شريكاً في الحساب.',
+    '{owner} لعب دور الملك، و{player} سجل الختيار على الفريق.', 'الشريك قرر المساعدة لكن الختيار وصل إلى رصيده.',
+    'عقد الشراكة مع {player} صار بحاجة بند خاص بالختيار.'
+  ] },
+  { category: 'opponent', count: 30, event: 'old-man-opponent', priority: 50, durationMs: 5200, frames: shortFrames, facts: [
+    '{player} من الخصم أكل الختيار، وفريق {team} أخذ نفساً.', 'الختيار عبر للخصم وتوقف عند {player}.',
+    'الضربة نزلت عند {opponentTeam} و{player} سجل الاستلام.', 'الخصم أخذ الختيار، وصاحب المملكة بقي بعيداً هذه المرة.',
+    '{player} فتح الطريق في الجهة الثانية والختيار وصل أولاً.'
+  ] },
+  { category: 'repeat', count: 40, event: 'old-man', minOccurrences: 2, priority: 80, durationMs: 6200, frames: roleFrames, facts: [
+    '{player} أكل الختيار للمرة {oldManCount}؛ صار الحدث متكرراً.', 'رجع الختيار إلى {player} للمرة {oldManCount} لأنه حفظ الطريق.',
+    'المرة {oldManCount} وما زال {player} يتعامل معها كأنها الأولى.', '{player} يجمع الختايرة والعداد مستمر.',
+    'الختيار و{player} صارا ثنائي القعدة؛ زيارة وراء زيارة.'
+  ] },
+  { category: 'repeat-doubled', count: 40, event: 'old-man', doubled: true, minOccurrences: 2, priority: 90, durationMs: 9000, frames: roleFrames, facts: [
+    '{player} كرر الختيار المدبل للمرة {oldManCount}؛ هذا صار اشتراكاً متكرراً.', 'المدبل رجع إلى {player} وكأنه ترك شيئاً عنده.',
+    'ختيار مدبل مرة ثانية؛ {player} يبني رقماً فوق رقم.', 'التدبيل تكرر ونفس اللاعب استلمه؛ ثبات غير مرغوب.',
+    '{player} كلما رأى الختيار مدبلاً وجده في رصيده.'
+  ] },
+  { category: 'magnet', count: 40, event: 'old-man', minOccurrences: 3, priority: 100, durationMs: 7600, frames: roleFrames, facts: [
+    '{player} صار مغناطيس اختيار رسمي؛ العدد وصل {oldManCount}.', 'أي اختيار يضيع في القعدة اسألوا عنه عند {player}.',
+    'العداد وصل {oldManCount}؛ اسم {player} صار مرتبطاً بالختيار.', 'الختيار لم يعد يلف على الطاولة؛ يتجه مباشرة إلى {player}.',
+    '{player} احتكر سجل الختيار وترك الباقي بعيدين.'
+  ] },
+  { category: 'historical', count: 20, event: 'old-man', historicalRecord: true, priority: 110, durationMs: 8200, frames: historicalFrames, facts: [
+    '{player} دخل الأرشيف: {oldManCount} ختايرة في قعدة واحدة.', 'سجل الختيار التاريخي انكسر باسم {player}.',
+    'الرقم القياسي صار باسم {player}؛ حتى العداد طلب التأكد.', 'القعدة سجلت حدثاً تاريخياً والختيار وقّعه باسم {player}.',
+    '{player} ساوى أسوأ رقم معروف، وصار الرقم بحاجة دفاع في القعدة القادمة.'
+  ] }
 ];
 
 function compileBlueprint(blueprint: Blueprint): MessageRule[] {

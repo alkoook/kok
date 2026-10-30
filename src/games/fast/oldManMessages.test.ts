@@ -21,6 +21,6 @@ describe('مصنع رسائل الختيار الجديد', () => {
   });
   it('لكل رسالة معرف وقالب بنيوي ويمكن منع تكرار الاسم داخل القالب', () => {
     expect(new Set(OLD_MAN_FACTORY_RULES.map((message) => message.id)).size).toBe(390);
-    expect(normalizeReactionSkeleton('الختيار ساكن بطيز {player}')).toBe(normalizeReactionSkeleton('الختيار ساكن بطيز {owner}'));
+    expect(normalizeReactionSkeleton('الختيار مسجل عند {player}')).toBe(normalizeReactionSkeleton('الختيار مسجل عند {owner}'));
   });
 });

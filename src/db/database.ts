@@ -3,7 +3,7 @@ import { aggregatePartnershipScores, calculateTrixRound, validateKingdomBalance,
 import { DEFAULT_TRIX_RULES, FAST_CONTRACTS, SLOW_CONTRACTS } from '../games/trix/rules';
 import { createUnconfirmedTarneebRules } from '../games/tarneeb/rules';
 import { calculateTarneeb41Round, calculateTarneeb61Round, deriveTarneeb41PlayerPhases, determineTarneeb41Winner, determineTarneebWinner } from '../games/tarneeb/scoring';
-import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleFiring, ContentOverride, GameRound, GameSession, LikhaRoundInput, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TelegramOutboxItem, TrixRoundInput } from '../types';
+import type { AppSettings, BackupFile, ConditionalReactionRule, ConditionalRuleFiring, ContentOverride, GameRound, GameSession, LikhaRoundInput, PlayerProfile, RulePreset, Tarneeb41RoundInput, TarneebRoundInput, TelegramOutboxItem, TelegramOutboxKind, TelegramResultSnapshot, TrixRoundInput } from '../types';
 import { isTrix, uid } from '../utils';
 import { deriveFastRoundDelta, isFastGame, validateFastKingdom, validateLashInput } from '../games/fast/scoring';
 import type { LashRoundInput, MessageRule, TrixRankingInput } from '../types';
@@ -104,11 +104,22 @@ class KokDatabase extends Dexie {
       conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt',
       telegramOutbox: 'id, &[gameId+resultRevision], status, nextAttemptAt, createdAt, sentAt'
     });
+    // V10 broadens the outbox to manual and weekly reports. Existing rows stay intact.
+    this.version(10).stores({
+      games: 'id, gameType, status, rulesVersion, createdAt, updatedAt', rounds: 'id, gameId, [gameId+index], createdAt',
+      players: 'id, &name, updatedAt, lastPlayedAt', settings: 'id', presets: 'id, gameType', messageRules: 'id, factoryId, category, event',
+      contentOverrides: 'id, factoryId, category, updatedAt', conditionalRules: 'id, game, event, enabled, exclusive, priority, updatedAt',
+      conditionalRuleFirings: 'id, ruleId, gameId, [gameId+ruleId], event, firedAt', audioAssets: 'id, name, createdAt, updatedAt', audioEventMappings: 'event, assetId, updatedAt',
+      telegramOutbox: 'id, kind, sourceKey, gameId, status, nextAttemptAt, createdAt, sentAt'
+    }).upgrade((transaction) => transaction.table<TelegramOutboxItem>('telegramOutbox').toCollection().modify((item) => {
+      if (!item.kind) item.kind = 'game_result_auto';
+      if (!item.sourceKey && item.gameId) item.sourceKey = `game:${item.gameId}:${item.resultRevision ?? 1}`;
+    }));
   }
 }
 
 export const db = new KokDatabase();
-export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, roastIntensity: 4, soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1, telegramAutoSend: false, onboardingSeen: false };
+export const DEFAULT_SETTINGS: AppSettings = { id: 'main', theme: 'system', vibration: true, keepAwake: false, roundReactions: true, contextualMessages: true, preferredTarneebTarget: 61, roastIntensity: 4, soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1, telegramAutoSend: false, telegramWeeklyAutoSend: false, onboardingSeen: false };
 
 const initialPresets = (): RulePreset[] => {
   const now = new Date().toISOString();
@@ -129,6 +140,7 @@ export async function initializeDatabase() {
     if (settings && settings.roastIntensity === undefined) await db.settings.update('main', { roastIntensity: 4 });
     if (settings && settings.soundEnabled === undefined) await db.settings.update('main', { soundEnabled: true, masterVolume: 80, effectsEnabled: true, effectsVolume: 75, messageVoiceEnabled: false, voiceVolume: 90, uiSoundsEnabled: false, speechRate: 1, speechPitch: 1 });
     if (settings && settings.telegramAutoSend === undefined) await db.settings.update('main', { telegramAutoSend: false });
+    if (settings && settings.telegramWeeklyAutoSend === undefined) await db.settings.update('main', { telegramWeeklyAutoSend: false });
     for (const preset of initialPresets()) if (!(await db.presets.get(preset.id))) await db.presets.add(preset);
     for (const id of ['trix-slow', 'trix-fast'] as const) {
       const preset = await db.presets.get(id);
@@ -152,15 +164,33 @@ export async function createGame(session: GameSession) {
   });
 }
 
+type TelegramQueueInput = { id?: string; kind: TelegramOutboxKind; sourceKey?: string; messageText: string; gameId?: string; gameType?: GameSession['gameType']; resultRevision?: number; resultSnapshot?: TelegramResultSnapshot };
+
+export async function enqueueTelegramMessage(input: TelegramQueueInput) {
+  const now = new Date().toISOString();
+  const id = input.id ?? uid();
+  const existing = await db.telegramOutbox.get(id);
+  if (existing) return existing;
+  const item: TelegramOutboxItem = { ...input, id, createdAt: now, updatedAt: now, status: 'pending', attemptCount: 0 };
+  await db.telegramOutbox.add(item);
+  if (typeof window !== 'undefined') queueMicrotask(() => { void import('../telegram/lifecycle').then(({ registerTelegramBackgroundSync }) => registerTelegramBackgroundSync()); });
+  return item;
+}
+
 export async function enqueueTelegramResult(gameId: string, correction = false) {
   const [game, settings, rounds] = await Promise.all([db.games.get(gameId), db.settings.get('main'), db.rounds.where('gameId').equals(gameId).sortBy('index')]);
   if (!game || game.status !== 'completed' || !settings?.telegramAutoSend || !settings.telegramBotToken?.trim() || !settings.telegramChatId?.trim()) return undefined;
-  const result = buildTelegramGameResult(game, rounds, correction); const now = new Date().toISOString(); const id = `${game.id}:${result.snapshot.resultRevision}`;
-  const existing = await db.telegramOutbox.get(id);
-  const item: TelegramOutboxItem = existing ? { ...existing, messageText: result.plainText, resultSnapshot: result.snapshot, updatedAt: now, status: existing.status === 'sent' ? 'sent' : 'pending', nextAttemptAt: undefined, lastError: existing.status === 'sent' ? existing.lastError : undefined } : { id, gameId: game.id, gameType: game.gameType, resultRevision: result.snapshot.resultRevision, messageText: result.plainText, resultSnapshot: result.snapshot, createdAt: now, updatedAt: now, status: 'pending', attemptCount: 0 };
-  await db.telegramOutbox.put(item);
-  if (typeof window !== 'undefined') queueMicrotask(() => { void import('../telegram/lifecycle').then(({ registerTelegramBackgroundSync }) => registerTelegramBackgroundSync()); void import('../telegram/outbox').then(({ flushTelegramOutbox }) => flushTelegramOutbox()); });
+  const result = buildTelegramGameResult(game, rounds, correction); const id = `game-result-auto:${game.id}:${result.snapshot.resultRevision}`;
+  const item = await enqueueTelegramMessage({ id, kind: 'game_result_auto', sourceKey: `game:${game.id}:${result.snapshot.resultRevision}`, gameId: game.id, gameType: game.gameType, resultRevision: result.snapshot.resultRevision, messageText: result.plainText, resultSnapshot: result.snapshot });
+  if (typeof window !== 'undefined') queueMicrotask(() => { void import('../telegram/outbox').then(({ flushTelegramOutbox }) => flushTelegramOutbox()); });
   return item;
+}
+
+export async function enqueueManualTelegramResult(gameId: string) {
+  const [game, rounds] = await Promise.all([db.games.get(gameId), db.rounds.where('gameId').equals(gameId).sortBy('index')]);
+  if (!game || game.status !== 'completed') throw new Error('النتيجة المكتملة غير موجودة');
+  const result = buildTelegramGameResult(game, rounds);
+  return enqueueTelegramMessage({ kind: 'game_result_manual', sourceKey: `game:${game.id}:${result.snapshot.resultRevision}`, gameId: game.id, gameType: game.gameType, resultRevision: result.snapshot.resultRevision, messageText: result.plainText, resultSnapshot: result.snapshot });
 }
 
 /** Finalizes exactly the last persisted score. The active-status guard makes rapid double confirmation idempotent. */
@@ -181,7 +211,9 @@ const sumScores = (base: Record<string, number>, delta: Record<string, number>, 
   Object.fromEntries(Object.keys(base).map((id) => [id, allowNegative ? base[id] + (delta[id] ?? 0) : Math.max(0, base[id] + (delta[id] ?? 0))]));
 
 const scoreIdsForGame = (game: GameSession) => game.gameType === 'likha'
-  ? game.players.map((player) => player.id)
+  ? game.likhaMode === 'partnership' && game.teams && game.teams.some((team) => Object.hasOwn(game.scores, team.id))
+    ? game.teams.map((team) => team.id)
+    : game.players.map((player) => player.id)
   : isFastGame(game) && game.trixMode === 'partnership' && game.teams
   ? game.teams.map((team) => team.id)
   : game.rulesSnapshot.kind === 'tarneeb-41-v2' || isTrix(game.gameType) || game.gameType === 'cc'
@@ -256,7 +288,7 @@ async function recomputeGameInTransaction(gameId: string) {
       input = calculated.input;
       scoreDelta = calculated.delta;
     } else if (game.rulesSnapshot.kind === 'likha-v1' && round.type === 'likha') {
-      scoreDelta = calculateLikhaRound(round.input as LikhaRoundInput, game.players.map((player) => player.id));
+      scoreDelta = calculateLikhaRound(round.input as LikhaRoundInput, game.players.map((player) => player.id), game.teams);
     } else if (game.rulesSnapshot.kind === 'tarneeb-61-v2' && round.type === 'tarneeb' && game.teams) {
       scoreDelta = calculateTarneeb61Round(round.input as TarneebRoundInput, [game.teams[0].id, game.teams[1].id], game.rulesSnapshot.rules).delta;
     } else if (game.rulesSnapshot.kind === 'trix' && round.type !== 'manual-adjustment') {
@@ -309,7 +341,7 @@ function normalizeNewRound(game: GameSession, round: Omit<GameRound, 'id' | 'ind
     return { ...round, input: calculated.input, scoreDelta: calculated.delta };
   }
   if (game.rulesSnapshot.kind === 'likha-v1' && round.type === 'likha') {
-    return { ...round, scoreDelta: calculateLikhaRound(round.input as LikhaRoundInput, game.players.map((player) => player.id)) };
+    return { ...round, scoreDelta: calculateLikhaRound(round.input as LikhaRoundInput, game.players.map((player) => player.id), game.teams) };
   }
   if (game.rulesSnapshot.kind === 'trix' && round.type !== 'manual-adjustment') {
     const input = round.input as TrixRoundInput;
@@ -413,7 +445,7 @@ export async function importBackup(backup: BackupFile, mode: 'merge' | 'replace'
       else await db.players.put(player);
     }
     await db.presets.bulkPut(backup.data.presets);
-    const safeSettings = backup.data.settings.map((setting) => ({ ...withoutTelegramSecrets(setting), telegramBotToken: localSettings?.telegramBotToken, telegramChatId: localSettings?.telegramChatId, telegramThreadId: localSettings?.telegramThreadId, telegramAutoSend: localSettings?.telegramAutoSend, telegramBotUsername: localSettings?.telegramBotUsername } as AppSettings));
+    const safeSettings = backup.data.settings.map((setting) => ({ ...withoutTelegramSecrets(setting), telegramBotToken: localSettings?.telegramBotToken, telegramChatId: localSettings?.telegramChatId, telegramThreadId: localSettings?.telegramThreadId, telegramAutoSend: localSettings?.telegramAutoSend, telegramWeeklyAutoSend: localSettings?.telegramWeeklyAutoSend, telegramWeeklyReportKeys: localSettings?.telegramWeeklyReportKeys, telegramBotUsername: localSettings?.telegramBotUsername } as AppSettings));
     await db.settings.bulkPut(safeSettings);
     if (backup.data.messageRules?.length) await db.messageRules.bulkPut(backup.data.messageRules);
     if (backup.data.contentOverrides?.length) await db.contentOverrides.bulkPut(backup.data.contentOverrides);

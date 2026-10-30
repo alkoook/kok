@@ -13,9 +13,19 @@ export type LikhaSpecialCapture = {
   doubled: boolean;
 };
 
+export type LikhaPartnershipRound = {
+  /** The only hearts value entered by the user; the opponent is always 13 - this value. */
+  enteredTeamId: string;
+  enteredTeamHearts: number;
+  /** Official ownership used for team scoring. Individual capturedBy attribution stays optional. */
+  cardTeams: Record<LikhaSpecialCard, string>;
+};
+
 export type LikhaRoundInput = {
   players: LikhaPlayerCapture[];
   specialCards: Record<LikhaSpecialCard, LikhaSpecialCapture>;
+  /** Absent on individual and legacy partnership rounds. */
+  partnership?: LikhaPartnershipRound;
 };
 
 export type LikhaRules = {

@@ -29,7 +29,7 @@ test('permanent roster, real avatar, seat assignment, teams, and temporary isola
   await page.getByRole('link', { name: /إدارة اللاعبين الدائمين/ }).click();
   for (const [index, name] of names.entries()) {
     await page.getByRole('button', { name: 'إضافة', exact: true }).click();
-    if (index === 0) await page.locator('input[type="file"]').setInputFiles('public/pwa-192.png');
+    if (index === 0) { await page.locator('input[type="file"]').setInputFiles('public/pwa-192.png'); await expect(page.getByRole('dialog').locator('img')).toHaveCount(1); }
     await page.getByLabel('الاسم').fill(name); await page.getByRole('button', { name: 'حفظ', exact: true }).click(); await expect(page.getByText(name, { exact: true })).toBeVisible();
   }
   await expect(page.locator('article img')).toHaveCount(1); await page.reload(); await expect(page.locator('article img')).toHaveCount(1);
@@ -50,6 +50,7 @@ test('permanent roster, real avatar, seat assignment, teams, and temporary isola
   for (const name of names.slice(0, 3)) await page.getByRole('button', { name: `اختيار اللاعب ${name}`, exact: true }).click();
   await addTemporaryPlayers(page, ['Temp Player']);
   await expect(page.getByTestId('seat-4')).toContainText('Temp Player');
+  await expect(page.getByText('Ahmed + Omar', { exact: true })).toBeVisible(); await expect(page.getByText('Ali + Temp Player', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'ابدأ المباراة' }).click(); await expect(page.getByText('المملكة 1 من 4')).toBeVisible(); expect(await databaseCount(page, 'players')).toBe(4);
   await page.getByRole('button', { name: 'الرئيسية', exact: true }).click(); await page.getByRole('navigation', { name: 'التنقل الرئيسي' }).getByRole('link', { name: 'الإعدادات', exact: true }).click(); await page.getByRole('link', { name: /إدارة اللاعبين الدائمين/ }).click();
   await expect(page.getByText('Temp Player', { exact: true })).toHaveCount(0); for (const name of names) await expect(page.getByText(name, { exact: true })).toBeVisible();
@@ -61,7 +62,7 @@ test('partnership Lash enters one team, derives the complement, switches side, e
   await page.getByRole('button', { name: /زائد 5/ }).click(); await expect(input).toHaveValue('-280'); await expect(page.getByTestId('derived-team-score')).toHaveText('-220');
   await page.getByRole('button', { name: /ناقص 5/ }).click(); await expect(input).toHaveValue('-285'); await expect(page.getByTestId('derived-team-score')).toHaveText('-215');
   await page.getByRole('button', { name: 'سجّل لفريق Ali + Ziad', exact: true }).click(); await expect(input).toHaveValue('-215'); await expect(page.getByTestId('derived-team-score')).toHaveText('-285'); await input.fill('-215');
-  await expect(page.getByTestId('lash-total')).toContainText('-500'); await page.getByRole('button', { name: 'Ahmed', exact: true }).click(); await page.getByRole('button', { name: 'مو مدبل' }).click(); await page.getByRole('button', { name: 'حفظ اللطش' }).click(); await expect(page.getByRole('status')).toContainText('شو هاد حمار سبحان مين حجبك عن أكل التبن'); await dismissMessages(page);
+  await expect(page.getByTestId('lash-total')).toContainText('-500'); await page.getByRole('button', { name: 'Ahmed', exact: true }).click(); await page.getByRole('button', { name: 'مو مدبل' }).click(); await page.getByRole('button', { name: 'حفظ اللطش' }).click(); await expect(page.getByRole('status')).toContainText('نتيجة تستحق المراجعة.'); await dismissMessages(page);
   await expect(page.getByTestId('team-score-1')).toContainText('-285'); await expect(page.getByTestId('team-score-2')).toContainText('-215');
   const rawInput = await page.evaluate(() => new Promise((resolve, reject) => { const request = indexedDB.open('lammatna-db'); request.onsuccess = () => { const result = request.result.transaction('rounds').objectStore('rounds').getAll(); result.onsuccess = () => resolve(result.result[0].input); result.onerror = () => reject(result.error); }; request.onerror = () => reject(request.error); }));
   expect(rawInput).toMatchObject({ kind: 'lash-partnership-fixed-total', enteredScore: -215, contractTotal: -500 }); expect(rawInput).toHaveProperty('enteredTeamId'); expect(rawInput).not.toHaveProperty('scoresByTeam');
@@ -84,7 +85,7 @@ test('Slow Trix partnership derives the second team for every complementary coun
     await expect(page.getByTestId('derived-contract-count')).toHaveText('5'); await expect(page.getByText(contract.firstScore, { exact: true })).toBeVisible(); await expect(page.getByText(contract.secondScore, { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'تأكيد النتيجة' }).click();
   }
-  const complementaryRounds = await page.evaluate(() => new Promise((resolve, reject) => { const request = indexedDB.open('lammatna-db'); request.onsuccess = () => { const result = request.result.transaction('rounds').objectStore('rounds').getAll(); result.onsuccess = () => resolve(result.result.map((round) => ({ contract: round.input.contract, counts: Object.values(round.input.counts) }))); result.onerror = () => reject(result.error); }; request.onerror = () => reject(request.error); }));
+  const complementaryRounds = await page.evaluate(() => new Promise((resolve, reject) => { const request = indexedDB.open('lammatna-db'); request.onsuccess = () => { const result = request.result.transaction('rounds').objectStore('rounds').getAll(); result.onsuccess = () => resolve(result.result.sort((a, b) => a.index - b.index).map((round) => ({ contract: round.input.contract, counts: Object.values(round.input.counts) }))); result.onerror = () => reject(result.error); }; request.onerror = () => reject(request.error); }));
   expect(complementaryRounds).toEqual([{ contract: 'diamonds', counts: [8, 5] }, { contract: 'tricks', counts: [8, 5] }]);
 });
 
@@ -96,7 +97,7 @@ test('complete Fast Trix partnership reaches rich summary and offline share card
 
 test('complete CC partnership validates -500/-1000/-4000 and summary', async ({ page }) => {
   test.setTimeout(90000); await page.setViewportSize({ width: 412, height: 915 }); await open(page, '#/new/cc'); await addTemporaryPlayers(page); await page.getByRole('button', { name: 'ابدأ المباراة' }).click();
-  for (let round = 0; round < 8; round += 1) { await page.getByText(`لطش ${(round % 2) + 1}`, { exact: true }).click(); await fillTeamLash(page, -180, names[Math.floor(round / 2)], round === 5); }
+  for (let round = 0; round < 8; round += 1) { await page.getByText(`لطش ${(round % 2) + 1}`, { exact: true }).last().click(); await fillTeamLash(page, -180, names[Math.floor(round / 2)], round === 5); }
   await expect(page.getByText('ملخص القعدة والألقاب')).toBeVisible(); const scores = await page.evaluate(() => new Promise((resolve, reject) => { const request = indexedDB.open('lammatna-db'); request.onsuccess = () => { const result = request.result.transaction('games').objectStore('games').getAll(); result.onsuccess = () => resolve(result.result.find((game) => game.gameType === 'cc').scores); result.onerror = () => reject(result.error); }; request.onerror = () => reject(request.error); })); expect(scores).toEqual(expect.objectContaining({})); expect(Object.values(scores).reduce((sum, value) => sum + value, 0)).toBe(-4000);
   await page.getByText('ملخص القعدة والألقاب').click(); await expect(page.getByRole('heading', { name: 'الممالك الأربع' })).toBeVisible(); await expect(page.getByText(/لطش 2/).first()).toBeVisible(); const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'مشاركة بطاقة القعدة' }).click(); expect((await download).suggestedFilename()).toContain('cc');
 });

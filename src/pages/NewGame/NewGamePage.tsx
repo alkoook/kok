@@ -8,6 +8,7 @@ import { useToast } from '../../components/common/toast-context';
 import { createGame, db } from '../../db/database';
 import { TARNEEB_41_RULES_V2, TARNEEB_61_RULES_V2 } from '../../games/tarneeb/rules';
 import { DEFAULT_TRIX_RULES } from '../../games/trix/rules';
+import { fixedPartnershipMembers } from '../../games/partnerships';
 import type { GamePlayer, GameSession, GameTeam, GameType, LikhaMode, PlayerProfile, RulesSnapshot, TrixMode, TrixRules } from '../../types';
 import { GAME_LABELS, uid } from '../../utils';
 
@@ -78,11 +79,11 @@ export function NewGamePage() {
       const players: GamePlayer[] = seats.map((seat, index) => ({ id: uid(), profileId: seat?.profileId, name: seat!.name, seat: index }));
       const likhaPartnership = gameType === 'likha' && likhaMode === 'partnership';
       const needsTeams = gameType.startsWith('tarneeb') || supportsMode && mode === 'partnership' || likhaPartnership;
-      const teamPairs: [[number, number], [number, number]] = likhaPartnership ? [[0, 1], [2, 3]] : [[0, 2], [1, 3]];
+      const teamPairs = fixedPartnershipMembers(players);
       const teamJoiner = likhaPartnership ? ' + ' : ' و';
       const teams: GameTeam[] | undefined = needsTeams ? [
-        { id: uid(), name: teamNames[0].trim() || `${players[teamPairs[0][0]].name}${teamJoiner}${players[teamPairs[0][1]].name}`, playerIds: [players[teamPairs[0][0]].id, players[teamPairs[0][1]].id] },
-        { id: uid(), name: teamNames[1].trim() || `${players[teamPairs[1][0]].name}${teamJoiner}${players[teamPairs[1][1]].name}`, playerIds: [players[teamPairs[1][0]].id, players[teamPairs[1][1]].id] }
+        { id: uid(), name: teamNames[0].trim() || `${teamPairs[0][0].name}${teamJoiner}${teamPairs[0][1].name}`, playerIds: [teamPairs[0][0].id, teamPairs[0][1].id] },
+        { id: uid(), name: teamNames[1].trim() || `${teamPairs[1][0].name}${teamJoiner}${teamPairs[1][1].name}`, playerIds: [teamPairs[1][0].id, teamPairs[1][1].id] }
       ] : undefined;
       let rulesSnapshot: RulesSnapshot;
       if (gameType === 'trix-fast') rulesSnapshot = { kind: 'fast-trix-v5', version: 5 };
@@ -93,7 +94,7 @@ export function NewGamePage() {
       } else if (gameType === 'tarneeb-61') rulesSnapshot = { kind: 'tarneeb-61-v2', version: 2, rules: { ...TARNEEB_61_RULES_V2, targetScore: chosenTarget } };
       else if (gameType === 'tarneeb-41') rulesSnapshot = { kind: 'tarneeb-41-v2', version: 2, rules: structuredClone(TARNEEB_41_RULES_V2) };
       else rulesSnapshot = { kind: 'likha-v1', version: 1, rules: { version: 1, lossLimit: chosenTarget } };
-      const teamScored = gameType === 'tarneeb-61' || (gameType === 'trix-fast' || gameType === 'cc') && mode === 'partnership';
+      const teamScored = gameType === 'tarneeb-61' || (gameType === 'trix-fast' || gameType === 'cc') && mode === 'partnership' || likhaPartnership;
       const scoreIds = teamScored ? teams!.map((team) => team.id) : players.map((player) => player.id);
       const game: GameSession = {
         id: uid(), gameType, status: 'active', players, teams, createdAt: now, updatedAt: now, currentRound: 0,
@@ -124,7 +125,7 @@ export function NewGamePage() {
       {profiles.length > 0 && <div className="mt-4"><label className="relative block"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18}/><input className="field pe-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث عن لاعب دائم"/></label><div data-testid="permanent-player-picker" className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">{filteredProfiles.map((profile) => { const selected = seats.some((seat) => seat?.profileId === profile.id); return <button key={profile.id} data-player-name={profile.name} aria-label={`${selected ? 'إزالة' : 'اختيار'} اللاعب ${profile.name}`} aria-pressed={selected} disabled={filled && !selected} className={`flex min-h-14 min-w-0 items-center gap-2 rounded-2xl border p-2 ${selected ? 'border-mint-500 bg-mint-500/10' : 'border-[var(--border)] bg-slate-100 dark:bg-white/5'} disabled:opacity-40`} onClick={() => assign({ key: profile.id, name: profile.name, profileId: profile.id, temporary: false })}><PlayerAvatar name={profile.name} photo={profile.photo} size="sm"/><b className="min-w-0 flex-1 truncate text-right text-sm">{profile.name}</b>{selected && <Check className="shrink-0" size={16}/>}</button>; })}</div></div>}
       <div className="mt-3 rounded-2xl bg-slate-100 p-3 dark:bg-white/5"><span className="mb-2 block text-xs font-black">+ لاعب مؤقت</span><div className="flex gap-2"><input className="field" value={temporaryName} onChange={(event) => setTemporaryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addTemporary(); }} placeholder="اسم اللاعب المؤقت"/><Button size="sm" icon={<Plus/>} disabled={!temporaryName.trim() || filled} onClick={addTemporary}>إضافة</Button></div></div>
     </section>
-    {(gameType.startsWith('tarneeb') || supportsMode && mode === 'partnership' || gameType === 'likha' && likhaMode === 'partnership') && <section className="surface mb-4 p-4"><h2 className="font-black">الشراكة واضحة قبل البدء</h2><div className="mt-3 grid grid-cols-2 gap-2"><TeamPreview label="الفريق A" seats={gameType === 'likha' ? [seats[0], seats[1]] : [seats[0], seats[2]]}/><TeamPreview label="الفريق B" seats={gameType === 'likha' ? [seats[2], seats[3]] : [seats[1], seats[3]]}/></div><p className="muted my-3 text-center text-xs">{gameType === 'likha' ? 'المقعد 1 + 2 ضد المقعد 3 + 4 — رتّب المقاعد لتحديد الشركاء' : 'المقعد 1 + 3 ضد المقعد 2 + 4'}</p><div className="grid grid-cols-2 gap-2"><input className="field" value={teamNames[0]} onChange={(event) => setTeamNames([event.target.value, teamNames[1]])} placeholder="اسم الفريق A (اختياري)"/><input className="field" value={teamNames[1]} onChange={(event) => setTeamNames([teamNames[0], event.target.value])} placeholder="اسم الفريق B (اختياري)"/></div></section>}
+    {(gameType.startsWith('tarneeb') || supportsMode && mode === 'partnership' || gameType === 'likha' && likhaMode === 'partnership') && <section className="surface mb-4 p-4"><h2 className="font-black">الشراكة واضحة قبل البدء</h2><div className="mt-3 grid grid-cols-2 gap-2"><TeamPreview label="الفريق A" seats={[seats[0], seats[2]]}/><TeamPreview label="الفريق B" seats={[seats[1], seats[3]]}/></div><p className="muted my-3 text-center text-xs">المقعد 1 + 3 ضد المقعد 2 + 4</p><div className="grid grid-cols-2 gap-2"><input className="field" value={teamNames[0]} onChange={(event) => setTeamNames([event.target.value, teamNames[1]])} placeholder="اسم الفريق A (اختياري)"/><input className="field" value={teamNames[1]} onChange={(event) => setTeamNames([teamNames[0], event.target.value])} placeholder="اسم الفريق B (اختياري)"/></div></section>}
     <Button className="w-full" size="lg" disabled={!uniqueValid || saving || (gameType === 'tarneeb-61' || gameType === 'likha') && chosenTarget <= 0} onClick={start}>{saving ? 'جارٍ البدء…' : 'ابدأ المباراة'}</Button>
   </main>;
 }

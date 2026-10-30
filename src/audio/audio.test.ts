@@ -79,7 +79,7 @@ describe('الصوت المحلي', () => {
 
 describe('القراءة الصوتية', () => {
   it('ينظف الرموز والتطويل التقني من دون تهذيب المحتوى', () => {
-    expect(normalizeSpeechText('خرااااا 😂😂!!!   يا زلمة')).toBe('خراا ! يا زلمة');
+    expect(normalizeSpeechText('ممتااااز 😂😂!!!   يا زلمة')).toBe('ممتااز ! يا زلمة');
   });
   it('يفضل الصوت العربي ثم يعود للصوت الافتراضي عند غياب المحفوظ', () => {
     const voices = [voice('English', 'en-US', 'en', true), voice('Arabic', 'ar-SY', 'ar')];

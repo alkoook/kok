@@ -162,7 +162,7 @@ export function calculateWeeklyHeroPlayerStats(games: GameSession[], rounds: Gam
 
     if (game.gameType === 'likha') gameRounds.filter((round) => round.type === 'likha').forEach((round) => {
       const input = round.input as LikhaRoundInput;
-      const delta = calculateLikhaRound(input, game.players.map((player) => player.id));
+      const delta = calculateLikhaRound(input, game.players.map((player) => player.id), game.teams);
       Object.entries(delta).forEach(([playerId, score]) => {
         const item = find(game, playerId);
         if (!item) return;

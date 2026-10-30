@@ -18,7 +18,7 @@ test('weekly court is mobile-safe and exposes hero, donkey and previous weeks', 
   await expect(page.getByText('لسا ما حدا استحق التاج.')).toBeVisible();
 
   await page.getByRole('tab', { name: '🐴 الحمار' }).click();
-  await expect(page.getByText('لسا ما حدا فضح حاله كفاية.')).toBeVisible();
+  await expect(page.getByText('لسا ما حدا سجل تعثرات كافية.')).toBeVisible();
   await page.getByRole('button', { name: 'الأسبوع السابق' }).click();
   await expect(page.getByText('أسبوع سابق')).toBeVisible();
 

@@ -1,103 +1,1091 @@
 @import '@fontsource-variable/noto-sans-arabic';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================
+   Theme
+   ========================================================= */
+
 :root {
-  color-scheme: light; font-family: 'Noto Sans Arabic Variable', Tahoma, Arial, sans-serif;
-  --bg: #f4f3ef; --surface: #fffefa; --surface-elevated: #f0f4f7; --text: #182034;
-  --text-muted: #667085; --border: #dde3e8; --accent: #0d9488; --accent-contrast: #fff;
-  --danger: #dc3545; --success: #0d9488;
+  color-scheme: light;
+  font-family: 'Noto Sans Arabic Variable', Tahoma, Arial, sans-serif;
+
+  --bg: #f4f3ef;
+  --surface: #fffefa;
+  --surface-elevated: #f0f4f7;
+  --text: #182034;
+  --text-muted: #667085;
+  --border: #dde3e8;
+  --accent: #0d9488;
+  --accent-contrast: #fff;
+  --danger: #dc3545;
+  --success: #0d9488;
 }
+
 :root.dark {
-  color-scheme: dark; --bg: #090f1e; --surface: #121a2c; --surface-elevated: #1a2540;
-  --text: #f3f7fb; --text-muted: #9ba8bb; --border: #26324a; --accent: #2dd4bf;
-  --accent-contrast: #08131c; --danger: #fb7185; --success: #2dd4bf;
+  color-scheme: dark;
+
+  --bg: #090f1e;
+  --surface: #121a2c;
+  --surface-elevated: #1a2540;
+  --text: #f3f7fb;
+  --text-muted: #9ba8bb;
+  --border: #26324a;
+  --accent: #2dd4bf;
+  --accent-contrast: #08131c;
+  --danger: #fb7185;
+  --success: #2dd4bf;
 }
-html { min-height: 100%; overflow-y: auto; background: var(--bg); -webkit-tap-highlight-color: transparent; scrollbar-width: none; }
-body { margin: 0; min-width: 320px; min-height: 100dvh; overflow-y: auto; background: var(--bg); color: var(--text); }
-#root { min-height: 100dvh; }
-html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; height: 0; }
-button, input, select, textarea { font: inherit; color: inherit; }
-select, option { color-scheme: inherit; background: var(--surface); color: var(--text); }
-input::placeholder, textarea::placeholder { color: var(--text-muted); opacity: .78; }
-button { touch-action: manipulation; }
-*:focus-visible { outline: 3px solid rgb(20 184 166 / .45); outline-offset: 2px; }
-::selection { background: rgb(45 212 191 / .25); }
+
+/* =========================================================
+   Base
+   ========================================================= */
+
+html {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  -webkit-tap-highlight-color: transparent;
+  scrollbar-width: none;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+
+  overflow: hidden;
+
+  background: var(--bg);
+  color: var(--text);
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+select,
+option {
+  color-scheme: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: .78;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+*:focus-visible {
+  outline: 3px solid rgb(20 184 166 / .45);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(45 212 191 / .25);
+}
+
+/* =========================================================
+   Shared Components
+   ========================================================= */
 
 @layer components {
-  .page { @apply mx-auto w-full max-w-3xl px-4 pt-4 sm:px-6; padding-bottom: calc(7rem + env(safe-area-inset-bottom)); }
-  .surface { @apply rounded-3xl border shadow-soft; background: var(--surface); border-color: var(--border); color: var(--text); }
-  .field { @apply min-h-12 w-full rounded-2xl border px-4 text-base outline-none transition focus:border-mint-500; background: var(--surface-elevated); border-color: var(--border); color: var(--text); }
-  .label { @apply mb-2 block text-sm font-bold text-slate-700 dark:text-slate-200; }
-  .eyebrow { @apply text-xs font-extrabold tracking-wide text-mint-600 dark:text-mint-400; }
-  .muted { @apply text-sm text-slate-500 dark:text-slate-400; }
+  .page {
+    @apply mx-auto w-full max-w-3xl px-4 pt-4 sm:px-6;
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+  }
+
+  .surface {
+    @apply rounded-3xl border shadow-soft;
+
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .field {
+    @apply min-h-12 w-full rounded-2xl border px-4 text-base outline-none transition focus:border-mint-500;
+
+    background: var(--surface-elevated);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .label {
+    @apply mb-2 block text-sm font-bold text-slate-700 dark:text-slate-200;
+  }
+
+  .eyebrow {
+    @apply text-xs font-extrabold tracking-wide text-mint-600 dark:text-mint-400;
+  }
+
+  .muted {
+    @apply text-sm text-slate-500 dark:text-slate-400;
+  }
 }
 
-.scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hidden::-webkit-scrollbar { display: none; width: 0; height: 0; }
-.kok-logo { display: block; direction: ltr; overflow: visible; filter: drop-shadow(0 8px 18px rgb(37 48 68 / .08)); }
-.kok-logo--compact { width: 6.5rem; height: auto; }
-.kok-logo--header { width: 11rem; height: auto; }
-.kok-logo--hero { width: min(19rem, 76vw); height: auto; }
-.kok-logo__stop--start { stop-color: #151522; }
-.kok-logo__stop--middle { stop-color: #633953; }
-.kok-logo__stop--end { stop-color: #232033; }
-.kok-logo__o { fill: #322336; fill-rule: evenodd; }
-.kok-logo__o-inner { fill: none; stroke: #a38467; stroke-width: 1.25; }
-.kok-logo__bridge { fill: none; stroke: #6e4962; stroke-width: 1.2; stroke-linecap: round; opacity: .78; }
-.kok-logo__ornament { fill: none; stroke: #9d795c; stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
-.kok-logo__flourish { fill: none; stroke: #89674f; stroke-width: 1; stroke-linecap: round; opacity: .75; }
-.dark .kok-logo { filter: drop-shadow(0 8px 18px rgb(0 0 0 / .18)); }
-.dark .kok-logo__stop--start { stop-color: #f7f2e7; }
-.dark .kok-logo__stop--middle { stop-color: #c8b99e; }
-.dark .kok-logo__stop--end { stop-color: #eef2f6; }
-.dark .kok-logo__o { fill: #eee8dc; }
-.dark .kok-logo__o-inner { stroke: #c8ac7b; }
-.dark .kok-logo__bridge { stroke: #a78bb5; }
-.dark .kok-logo__ornament, .dark .kok-logo__flourish { stroke: #c8aa77; }
+/* =========================================================
+   Scroll
+   ========================================================= */
 
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } }
-.toast-in { animation: toast-in .2s ease-out; }
-@keyframes reaction-enter { 0% { opacity: 0; transform: translateY(18px) scale(.96); } 72% { opacity: 1; transform: translateY(-1px) scale(1.012); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
-@keyframes reaction-exit { to { opacity: 0; transform: translateY(8px) scale(.98); } }
-@keyframes reaction-progress { to { transform: scaleX(0); } }
-@keyframes reaction-shake { 0%, 100% { transform: translateX(0); } 30% { transform: translateX(3px); } 60% { transform: translateX(-3px); } }
-@keyframes reaction-shimmer { from { transform: translateX(140%) skewX(-18deg); } to { transform: translateX(-220%) skewX(-18deg); } }
-@keyframes reaction-kaboot-pop { 0%, 100% { transform: scale(1); } 55% { transform: scale(1.025); } }
-.reaction-layer { bottom: calc(6rem + env(safe-area-inset-bottom)); animation: reaction-enter .34s cubic-bezier(.2,.8,.2,1) both; }
-.reaction-layer--out { animation: reaction-exit .2s ease-in both; }
-.reaction-toast { max-width: calc(100vw - 1.5rem); isolation: isolate; box-shadow: 0 24px 64px rgb(15 23 42 / .24), 0 10px 24px rgb(15 23 42 / .16), inset 0 1px 0 rgb(255 255 255 / .7); }
-.dark .reaction-toast { box-shadow: 0 26px 68px rgb(0 0 0 / .56), 0 10px 26px rgb(0 0 0 / .38), inset 0 1px 0 rgb(255 255 255 / .07); }
-.reaction-toast::before { position: absolute; inset-inline: 1rem; top: 0; height: 2px; border-radius: 999px; content: ''; opacity: .9; }
-.reaction-toast--success { box-shadow: 0 24px 64px rgb(15 23 42 / .22), 0 10px 28px rgb(16 185 129 / .18), inset 0 1px 0 rgb(255 255 255 / .72); }
-.reaction-toast--success::before { background: linear-gradient(90deg, transparent, #34d399, transparent); }
-.reaction-toast--failure::before { background: linear-gradient(90deg, transparent, #fb7185, transparent); }
-.reaction-toast--broken-seven::before { background: linear-gradient(90deg, transparent, #c2410c, #fb7185, transparent); }
-.reaction-toast--failure, .reaction-toast--broken-seven { box-shadow: 0 24px 64px rgb(15 23 42 / .24), 0 10px 30px rgb(244 63 94 / .19), inset 0 1px 0 rgb(255 255 255 / .7); }
-.reaction-toast--failure { animation: reaction-shake .24s .22s ease-out both; }
-.reaction-toast--kaboot { box-shadow: 0 26px 70px rgb(15 23 42 / .24), 0 10px 34px rgb(245 158 11 / .28), inset 0 1px 0 rgb(255 255 255 / .72); animation: reaction-kaboot-pop .4s .12s cubic-bezier(.2,.8,.2,1) both; }
-.reaction-toast--kaboot::before { background: linear-gradient(90deg, transparent, #fbbf24, #fde68a, transparent); }
-.reaction-toast--kaboot::after { position: absolute; inset: 0; z-index: -1; width: 35%; content: ''; background: linear-gradient(90deg, transparent, rgb(251 191 36 / .18), transparent); animation: reaction-shimmer .75s .18s ease-out both; }
-.reaction-progress { animation: reaction-progress linear forwards; }
-@keyframes summary-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes summary-crown { 0% { transform: scale(.8) rotate(-5deg); } 70% { transform: scale(1.06) rotate(2deg); } 100% { transform: scale(1) rotate(0); } }
-@keyframes context-message-in { from { opacity: 0; transform: translateY(22px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
-@keyframes message-progress { to { transform: scaleX(0); } }
-@keyframes score-pop { 50% { transform: scale(1.08); } }
-@keyframes trix-winner { 0% { transform: scale(.92); } 70% { transform: scale(1.04); } 100% { transform: scale(1); } }
-.context-message { animation: context-message-in .28s cubic-bezier(.2,.8,.2,1) both; }
-.message-progress { transform-origin: right; animation: message-progress linear forwards; }
-.score-pop { transition: color .2s ease, transform .2s ease; animation: score-pop .28s ease-out; }
-.trix-winner { animation: trix-winner .32s cubic-bezier(.2,.8,.2,1); }
-.contract-switch { transition: transform .18s ease, border-color .18s ease; }
-.contract-switch:active { transform: scale(.98); }
-.match-finish { animation: summary-rise .4s cubic-bezier(.2,.8,.2,1); }
-.summary-hero { animation: summary-rise .38s cubic-bezier(.2,.8,.2,1) both; }
-.summary-hero svg { animation: summary-crown .42s .12s cubic-bezier(.2,.8,.2,1) both; }
-.summary-award-card { animation: summary-rise .32s cubic-bezier(.2,.8,.2,1) both; }
-.weekly-donkey-card { animation: summary-rise .38s cubic-bezier(.2,.8,.2,1) both; }
-.hero-crown { animation: summary-crown .42s .12s cubic-bezier(.2,.8,.2,1) both; }
-.donkey-seal { animation: donkey-stamp .42s .16s cubic-bezier(.2,.9,.25,1.2) both; }
-@keyframes donkey-stamp { 0% { opacity: 0; transform: scale(1.8) rotate(-12deg); } 70% { opacity: 1; transform: scale(.94) rotate(3deg); } 100% { transform: scale(1) rotate(0); } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/*
+  هذا هو الجزء الوحيد الذي يتحرك بالسكرول.
+  الرسالة الموجودة فوقه تبقى خارج منطقة السكرول.
+*/
+.app-content-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+
+  scrollbar-width: none;
+}
+
+.app-content-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* =========================================================
+   Global App Signature
+   ========================================================= */
+
+@property --signature-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.app-signature {
+  /*
+    مهم:
+    لا fixed
+    لا sticky
+
+    الـAppShell هو flex column.
+    الرسالة تأخذ مكانها الطبيعي بالأعلى،
+    ومنطقة التطبيق التي تحتها هي التي تسكرول.
+  */
+
+  position: relative;
+  z-index: 50;
+
+  flex: 0 0 auto;
+
+  width: max-content;
+  max-width: calc(100% - 1rem);
+
+  margin:
+    max(.5rem, env(safe-area-inset-top))
+    auto
+    .45rem;
+
+  padding: .46rem 1.1rem;
+
+  overflow: hidden;
+  isolation: isolate;
+
+  border-radius: 999px;
+
+  text-align: center;
+  white-space: nowrap;
+
+  font-family: 'Noto Sans Arabic Variable', Tahoma, Arial, sans-serif;
+  font-size: .69rem;
+  font-weight: 760;
+  line-height: 1.4;
+
+  color:
+    color-mix(
+      in srgb,
+      var(--text) 74%,
+      var(--text-muted)
+    );
+
+  background:
+    linear-gradient(
+      115deg,
+      color-mix(in srgb, var(--surface) 96%, var(--accent)),
+      color-mix(in srgb, var(--surface) 88%, var(--accent) 12%),
+      color-mix(in srgb, var(--surface) 97%, var(--accent))
+    );
+
+  background-size: 220% 100%;
+
+  box-shadow:
+    0 5px 18px rgb(0 0 0 / .08),
+    inset 0 1px 0 rgb(255 255 255 / .06);
+
+  animation:
+    app-signature-surface 8s ease-in-out infinite;
+}
+
+/* =========================================================
+   Signature Animated Border
+   ========================================================= */
+
+.app-signature::before {
+  content: '';
+
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+
+  border-radius: inherit;
+  padding: 1px;
+
+  pointer-events: none;
+
+  background:
+    conic-gradient(
+      from var(--signature-angle),
+
+      transparent 0deg,
+      transparent 45deg,
+
+      color-mix(
+        in srgb,
+        var(--accent) 90%,
+        transparent
+      ) 90deg,
+
+      color-mix(
+        in srgb,
+        #60a5fa 76%,
+        transparent
+      ) 132deg,
+
+      transparent 175deg,
+      transparent 225deg,
+
+      color-mix(
+        in srgb,
+        #a78bfa 72%,
+        transparent
+      ) 275deg,
+
+      transparent 322deg,
+      transparent 360deg
+    );
+
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+
+  -webkit-mask-composite: xor;
+
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+
+  mask-composite: exclude;
+
+  animation:
+    app-signature-border 5.5s linear infinite;
+}
+
+/* =========================================================
+   Signature Light Sweep
+   ========================================================= */
+
+.app-signature::after {
+  content: '';
+
+  position: absolute;
+
+  top: -80%;
+  bottom: -80%;
+  left: -35%;
+
+  z-index: -1;
+
+  width: 20%;
+
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / .13),
+      transparent
+    );
+
+  transform: skewX(-20deg);
+
+  animation:
+    app-signature-glint 7s ease-in-out infinite;
+}
+
+/* =========================================================
+   Signature Animations
+   ========================================================= */
+
+@keyframes app-signature-border {
+  from {
+    --signature-angle: 0deg;
+  }
+
+  to {
+    --signature-angle: 360deg;
+  }
+}
+
+@keyframes app-signature-surface {
+  0%,
+  100% {
+    background-position: 100% 50%;
+  }
+
+  50% {
+    background-position: 0 50%;
+  }
+}
+
+@keyframes app-signature-glint {
+  0%,
+  72% {
+    left: -35%;
+    opacity: 0;
+  }
+
+  78% {
+    opacity: .75;
+  }
+
+  92% {
+    left: 115%;
+    opacity: .5;
+  }
+
+  100% {
+    left: 115%;
+    opacity: 0;
+  }
+}
+
+/* =========================================================
+   Signature Dark Theme
+   ========================================================= */
+
+.dark .app-signature {
+  color:
+    color-mix(
+      in srgb,
+      var(--text) 84%,
+      var(--text-muted)
+    );
+
+  background:
+    linear-gradient(
+      115deg,
+      color-mix(in srgb, var(--surface) 97%, #000),
+      color-mix(in srgb, var(--surface) 86%, var(--accent) 14%),
+      color-mix(in srgb, var(--surface) 97%, #000)
+    );
+
+  background-size: 220% 100%;
+
+  box-shadow:
+    0 6px 22px rgb(0 0 0 / .22),
+    inset 0 1px 0 rgb(255 255 255 / .045);
+}
+
+.dark .app-signature::after {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / .08),
+      transparent
+    );
+}
+
+/* =========================================================
+   Signature Mobile
+   ========================================================= */
+
+@media (max-width: 420px) {
+  .app-signature {
+    max-width: calc(100% - 1rem);
+
+    padding: .42rem .82rem;
+
+    font-size: .64rem;
+  }
+}
+
+/* =========================================================
+   KOK Logo
+   ========================================================= */
+
+.kok-logo {
+  display: block;
+
+  direction: ltr;
+
+  overflow: visible;
+
+  filter:
+    drop-shadow(
+      0 8px 18px rgb(37 48 68 / .08)
+    );
+}
+
+.kok-logo--compact {
+  width: 6.5rem;
+  height: auto;
+}
+
+.kok-logo--header {
+  width: 11rem;
+  height: auto;
+}
+
+.kok-logo--hero {
+  width: min(19rem, 76vw);
+  height: auto;
+}
+
+.kok-logo__stop--start {
+  stop-color: #151522;
+}
+
+.kok-logo__stop--middle {
+  stop-color: #633953;
+}
+
+.kok-logo__stop--end {
+  stop-color: #232033;
+}
+
+.kok-logo__o {
+  fill: #322336;
+  fill-rule: evenodd;
+}
+
+.kok-logo__o-inner {
+  fill: none;
+
+  stroke: #a38467;
+  stroke-width: 1.25;
+}
+
+.kok-logo__bridge {
+  fill: none;
+
+  stroke: #6e4962;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+
+  opacity: .78;
+}
+
+.kok-logo__ornament {
+  fill: none;
+
+  stroke: #9d795c;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kok-logo__flourish {
+  fill: none;
+
+  stroke: #89674f;
+  stroke-width: 1;
+  stroke-linecap: round;
+
+  opacity: .75;
+}
+
+.dark .kok-logo {
+  filter:
+    drop-shadow(
+      0 8px 18px rgb(0 0 0 / .18)
+    );
+}
+
+.dark .kok-logo__stop--start {
+  stop-color: #f7f2e7;
+}
+
+.dark .kok-logo__stop--middle {
+  stop-color: #c8b99e;
+}
+
+.dark .kok-logo__stop--end {
+  stop-color: #eef2f6;
+}
+
+.dark .kok-logo__o {
+  fill: #eee8dc;
+}
+
+.dark .kok-logo__o-inner {
+  stroke: #c8ac7b;
+}
+
+.dark .kok-logo__bridge {
+  stroke: #a78bb5;
+}
+
+.dark .kok-logo__ornament,
+.dark .kok-logo__flourish {
+  stroke: #c8aa77;
+}
+
+/* =========================================================
+   Toast
+   ========================================================= */
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+}
+
+.toast-in {
+  animation:
+    toast-in .2s ease-out;
+}
+
+/* =========================================================
+   Reactions
+   ========================================================= */
+
+@keyframes reaction-enter {
+  0% {
+    opacity: 0;
+    transform:
+      translateY(18px)
+      scale(.96);
+  }
+
+  72% {
+    opacity: 1;
+    transform:
+      translateY(-1px)
+      scale(1.012);
+  }
+
+  100% {
+    opacity: 1;
+    transform:
+      translateY(0)
+      scale(1);
+  }
+}
+
+@keyframes reaction-exit {
+  to {
+    opacity: 0;
+
+    transform:
+      translateY(8px)
+      scale(.98);
+  }
+}
+
+@keyframes reaction-progress {
+  to {
+    transform:
+      scaleX(0);
+  }
+}
+
+@keyframes reaction-shake {
+  0%,
+  100% {
+    transform:
+      translateX(0);
+  }
+
+  30% {
+    transform:
+      translateX(3px);
+  }
+
+  60% {
+    transform:
+      translateX(-3px);
+  }
+}
+
+@keyframes reaction-shimmer {
+  from {
+    transform:
+      translateX(140%)
+      skewX(-18deg);
+  }
+
+  to {
+    transform:
+      translateX(-220%)
+      skewX(-18deg);
+  }
+}
+
+@keyframes reaction-kaboot-pop {
+  0%,
+  100% {
+    transform:
+      scale(1);
+  }
+
+  55% {
+    transform:
+      scale(1.025);
+  }
+}
+
+.reaction-layer {
+  bottom:
+    calc(
+      6rem + env(safe-area-inset-bottom)
+    );
+
+  animation:
+    reaction-enter
+    .34s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.reaction-layer--out {
+  animation:
+    reaction-exit
+    .2s
+    ease-in
+    both;
+}
+
+.reaction-toast {
+  max-width:
+    calc(100vw - 1.5rem);
+
+  isolation: isolate;
+
+  box-shadow:
+    0 24px 64px rgb(15 23 42 / .24),
+    0 10px 24px rgb(15 23 42 / .16),
+    inset 0 1px 0 rgb(255 255 255 / .7);
+}
+
+.dark .reaction-toast {
+  box-shadow:
+    0 26px 68px rgb(0 0 0 / .56),
+    0 10px 26px rgb(0 0 0 / .38),
+    inset 0 1px 0 rgb(255 255 255 / .07);
+}
+
+.reaction-toast::before {
+  position: absolute;
+
+  inset-inline: 1rem;
+  top: 0;
+
+  height: 2px;
+
+  border-radius: 999px;
+
+  content: '';
+
+  opacity: .9;
+}
+
+.reaction-toast--success {
+  box-shadow:
+    0 24px 64px rgb(15 23 42 / .22),
+    0 10px 28px rgb(16 185 129 / .18),
+    inset 0 1px 0 rgb(255 255 255 / .72);
+}
+
+.reaction-toast--success::before {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #34d399,
+      transparent
+    );
+}
+
+.reaction-toast--failure::before {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #fb7185,
+      transparent
+    );
+}
+
+.reaction-toast--broken-seven::before {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #c2410c,
+      #fb7185,
+      transparent
+    );
+}
+
+.reaction-toast--failure,
+.reaction-toast--broken-seven {
+  box-shadow:
+    0 24px 64px rgb(15 23 42 / .24),
+    0 10px 30px rgb(244 63 94 / .19),
+    inset 0 1px 0 rgb(255 255 255 / .7);
+}
+
+.reaction-toast--failure {
+  animation:
+    reaction-shake
+    .24s
+    .22s
+    ease-out
+    both;
+}
+
+.reaction-toast--kaboot {
+  box-shadow:
+    0 26px 70px rgb(15 23 42 / .24),
+    0 10px 34px rgb(245 158 11 / .28),
+    inset 0 1px 0 rgb(255 255 255 / .72);
+
+  animation:
+    reaction-kaboot-pop
+    .4s
+    .12s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.reaction-toast--kaboot::before {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #fbbf24,
+      #fde68a,
+      transparent
+    );
+}
+
+.reaction-toast--kaboot::after {
+  position: absolute;
+
+  inset: 0;
+
+  z-index: -1;
+
+  width: 35%;
+
+  content: '';
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgb(251 191 36 / .18),
+      transparent
+    );
+
+  animation:
+    reaction-shimmer
+    .75s
+    .18s
+    ease-out
+    both;
+}
+
+.reaction-progress {
+  animation:
+    reaction-progress
+    linear
+    forwards;
+}
+
+/* =========================================================
+   Summary Animations
+   ========================================================= */
+
+@keyframes summary-rise {
+  from {
+    opacity: 0;
+
+    transform:
+      translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+
+    transform:
+      translateY(0);
+  }
+}
+
+@keyframes summary-crown {
+  0% {
+    transform:
+      scale(.8)
+      rotate(-5deg);
+  }
+
+  70% {
+    transform:
+      scale(1.06)
+      rotate(2deg);
+  }
+
+  100% {
+    transform:
+      scale(1)
+      rotate(0);
+  }
+}
+
+@keyframes context-message-in {
+  from {
+    opacity: 0;
+
+    transform:
+      translateY(22px)
+      scale(.96);
+  }
+
+  to {
+    opacity: 1;
+
+    transform:
+      translateY(0)
+      scale(1);
+  }
+}
+
+@keyframes message-progress {
+  to {
+    transform:
+      scaleX(0);
+  }
+}
+
+@keyframes score-pop {
+  50% {
+    transform:
+      scale(1.08);
+  }
+}
+
+@keyframes trix-winner {
+  0% {
+    transform:
+      scale(.92);
+  }
+
+  70% {
+    transform:
+      scale(1.04);
+  }
+
+  100% {
+    transform:
+      scale(1);
+  }
+}
+
+.context-message {
+  animation:
+    context-message-in
+    .28s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.message-progress {
+  transform-origin: right;
+
+  animation:
+    message-progress
+    linear
+    forwards;
+}
+
+.score-pop {
+  transition:
+    color .2s ease,
+    transform .2s ease;
+
+  animation:
+    score-pop
+    .28s
+    ease-out;
+}
+
+.trix-winner {
+  animation:
+    trix-winner
+    .32s
+    cubic-bezier(.2, .8, .2, 1);
+}
+
+.contract-switch {
+  transition:
+    transform .18s ease,
+    border-color .18s ease;
+}
+
+.contract-switch:active {
+  transform:
+    scale(.98);
+}
+
+.match-finish {
+  animation:
+    summary-rise
+    .4s
+    cubic-bezier(.2, .8, .2, 1);
+}
+
+.summary-hero {
+  animation:
+    summary-rise
+    .38s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.summary-hero svg {
+  animation:
+    summary-crown
+    .42s
+    .12s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.summary-award-card {
+  animation:
+    summary-rise
+    .32s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.weekly-donkey-card {
+  animation:
+    summary-rise
+    .38s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.hero-crown {
+  animation:
+    summary-crown
+    .42s
+    .12s
+    cubic-bezier(.2, .8, .2, 1)
+    both;
+}
+
+.donkey-seal {
+  animation:
+    donkey-stamp
+    .42s
+    .16s
+    cubic-bezier(.2, .9, .25, 1.2)
+    both;
+}
+
+@keyframes donkey-stamp {
+  0% {
+    opacity: 0;
+
+    transform:
+      scale(1.8)
+      rotate(-12deg);
+  }
+
+  70% {
+    opacity: 1;
+
+    transform:
+      scale(.94)
+      rotate(3deg);
+  }
+
+  100% {
+    transform:
+      scale(1)
+      rotate(0);
+  }
+}
+
+/* =========================================================
+   Reduced Motion
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+
+  .app-signature,
+  .app-signature::before,
+  .app-signature::after {
+    animation: none !important;
+  }
+}

@@ -1,4 +1,5 @@
 import { flushTelegramOutbox } from './outbox';
+import { ensurePreviousWeeklyReport } from './weeklyReports';
 
 export const TELEGRAM_SYNC_TAG = 'telegram-outbox-sync';
 type SyncCapableRegistration = ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } };
@@ -9,10 +10,11 @@ export async function registerTelegramBackgroundSync() {
 }
 
 export function installTelegramOutboxTriggers() {
-  let lastTrigger = 0; const trigger = (force = false) => { const now = Date.now(); if (!force && now - lastTrigger < 1500) return; lastTrigger = now; void flushTelegramOutbox({ force }); };
+  let lastTrigger = 0; const trigger = (force = false) => { const now = Date.now(); if (!force && now - lastTrigger < 1500) return; lastTrigger = now; void ensurePreviousWeeklyReport(new Date(now)).then(() => flushTelegramOutbox({ force })); };
   const online = () => trigger(true);
   const focus = () => trigger();
   const visible = () => { if (document.visibilityState === 'visible') trigger(); };
   window.addEventListener('online', online); window.addEventListener('focus', focus); document.addEventListener('visibilitychange', visible); trigger();
-  return () => { window.removeEventListener('online', online); window.removeEventListener('focus', focus); document.removeEventListener('visibilitychange', visible); };
+  const boundaryCheck = window.setInterval(() => { if (document.visibilityState === 'visible') trigger(); }, 60_000);
+  return () => { window.clearInterval(boundaryCheck); window.removeEventListener('online', online); window.removeEventListener('focus', focus); document.removeEventListener('visibilitychange', visible); };
 }

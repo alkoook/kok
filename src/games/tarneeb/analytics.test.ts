@@ -55,7 +55,7 @@ describe('تحليلات قعدة طرنيب 61', () => {
     expect(sniper?.playerIds).toEqual(['p2']);
   });
 
-  it('يحسب ألقاب البطولة والفضيحة بقواعد صريحة', () => {
+  it('يحسب ألقاب البطولة والتعثر بقواعد صريحة', () => {
     const rounds = [round(0, 'p1', 8, 8), round(1, 'p1', 9, 9), round(2, 'p1', 10, 10), round(3, 'p2', 7, 5), round(4, 'p2', 7, 6), round(5, 'p2', 9, 5)];
     const awards = buildTarneeb61SessionSummary(game(), rounds).awards;
     expect(awards.find((item) => item.id === 'session-king')?.playerIds).toContain('p1');

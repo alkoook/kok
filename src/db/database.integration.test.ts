@@ -4,7 +4,7 @@ import type { GameSession, LikhaRoundInput, TarneebRoundInput } from '../types';
 import { uid } from '../utils';
 import { deriveTarneeb41PlayerPhases } from '../games/tarneeb/scoring';
 import { DEFAULT_TRIX_RULES } from '../games/trix/rules';
-import { addRound, createGame, db, deleteGame, exportBackup, finalizeGameEarly, importBackup, initializeDatabase, replaceRound, undoLastRound } from './database';
+import { addRound, createGame, db, deleteGame, enqueueManualTelegramResult, enqueueTelegramResult, exportBackup, finalizeGameEarly, importBackup, initializeDatabase, replaceRound, undoLastRound } from './database';
 
 const players = ['a', 'b', 'c', 'd'].map((id, seat) => ({ id, name: id, seat })); const teams = [{ id: 'x', name: 'X', playerIds: ['a', 'c'] as [string, string] }, { id: 'y', name: 'Y', playerIds: ['b', 'd'] as [string, string] }];
 const tarneeb = (target: number): GameSession => ({ id: uid(), gameType: 'tarneeb-61', status: 'active', players, teams, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentRound: 0, scores: { x: 0, y: 0 }, rulesSnapshot: { kind: 'tarneeb-61-v2', version: 2, rules: { version: 2, targetScore: target, minimumBid: 7, maximumBid: 13 } } });
@@ -35,6 +35,19 @@ describe('تكامل Dexie', () => {
     expect(((await db.rounds.where('gameId').equals(game.id).first())?.input as LikhaRoundInput).specialCards.queenSpades.capturedBy).toBe('a');
     await undoLastRound(game.id); expect((await db.games.get(game.id))?.status).toBe('active');
   });
+  it('يحفظ ليخة الشراكة الجديدة بنتيجتي فريق فقط ويعيد حساب التعديل والتراجع والنهاية', async () => {
+    const game: GameSession = { id: uid(), gameType: 'likha', likhaMode: 'partnership', status: 'active', players, teams, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentRound: 0, scores: { x: 0, y: 0 }, rulesSnapshot: { kind: 'likha-v1', version: 1, rules: { version: 1, lossLimit: 100 } }, rulesVersion: 1 };
+    const input = (hearts: number): LikhaRoundInput => ({ players: players.map((player) => ({ playerId: player.id, heartsCount: 0 })), partnership: { enteredTeamId: 'x', enteredTeamHearts: hearts, cardTeams: { queenSpades: 'x', jackDiamonds: 'y', kingClubs: 'x', tenDiamonds: 'y' } }, specialCards: { queenSpades: { capturedBy: 'a', doubled: false }, jackDiamonds: { capturedBy: 'b', doubled: false }, kingClubs: { capturedBy: 'c', doubled: true }, tenDiamonds: { capturedBy: 'd', doubled: true } } });
+    await createGame(game);
+    const first = await addRound({ gameId: game.id, type: 'likha', input: input(10), scoreDelta: {} });
+    expect((await db.games.get(game.id))?.scores).toEqual({ x: -51, y: 6 });
+    await replaceRound(first.id, { type: 'likha', input: input(5), scoreDelta: {}, note: undefined });
+    expect((await db.games.get(game.id))?.scores).toEqual({ x: -46, y: 1 });
+    await undoLastRound(game.id); expect((await db.games.get(game.id))?.scores).toEqual({ x: 0, y: 0 });
+    await addRound({ gameId: game.id, type: 'likha', input: input(10), scoreDelta: {} }); await addRound({ gameId: game.id, type: 'likha', input: input(10), scoreDelta: {} });
+    expect(await db.games.get(game.id)).toMatchObject({ status: 'completed', scores: { x: -102, y: 12 }, winnerIds: ['y'] });
+    expect(await db.rounds.where('gameId').equals(game.id).count()).toBe(2);
+  });
   it('يعيد قيد 41 للطرف إلى الطبيعي عندما يلغي التراجع وصوله إلى 30', async () => {
     const game: GameSession = { id: uid(), gameType: 'tarneeb-41', status: 'active', players, teams, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentRound: 0, scores: { a: 0, b: 0, c: 0, d: 0 }, rulesSnapshot: { kind: 'tarneeb-41-v2', version: 2, rules: { version: 2, targetScore: 41, minimumTotalBids: 11, maximumBid: 13 } }, rulesVersion: 2 };
     await createGame(game); await addRound({ gameId: game.id, type: 'manual-adjustment', input: { targetId: 'a', amount: 28 }, scoreDelta: { a: 28 } }); await addRound({ gameId: game.id, type: 'manual-adjustment', input: { targetId: 'a', amount: 2 }, scoreDelta: { a: 2 } });
@@ -55,7 +68,20 @@ describe('تكامل Dexie', () => {
     await db.settings.update('main', { telegramAutoSend: true, telegramBotToken: '123:ABC', telegramChatId: '42' });
     const game: GameSession = { id: uid(), gameType: 'likha', status: 'active', players, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), currentRound: 0, scores: { a: -10, b: -10, c: -20, d: -30 }, rulesSnapshot: { kind: 'likha-v1', version: 1, rules: { version: 1, lossLimit: 210 } } };
     await createGame(game); await Promise.all([finalizeGameEarly(game.id), finalizeGameEarly(game.id)]);
-    expect((await db.games.get(game.id))?.winnerIds?.sort()).toEqual(['a', 'b']); expect(await db.telegramOutbox.where('gameId').equals(game.id).count()).toBe(1); expect((await db.telegramOutbox.where('gameId').equals(game.id).first())?.resultSnapshot.standings[0].score).toBe(-10);
+    expect((await db.games.get(game.id))?.winnerIds?.sort()).toEqual(['a', 'b']); expect(await db.telegramOutbox.where('gameId').equals(game.id).count()).toBe(1); expect((await db.telegramOutbox.where('gameId').equals(game.id).first())?.resultSnapshot?.standings[0].score).toBe(-10);
+  });
+  it('يسمح بتكرار مشاركة History اليدوية ويمنع تكرار الإرسال التلقائي', async () => {
+    const game: GameSession = { id: uid(), gameType: 'likha', status: 'completed', players, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), currentRound: 0, scores: { a: -10, b: -20, c: -30, d: -40 }, winnerIds: ['a'], resultRevision: 1, rulesSnapshot: { kind: 'likha-v1', version: 1, rules: { version: 1, lossLimit: 210 } } };
+    await createGame(game);
+    const firstManual = await enqueueManualTelegramResult(game.id);
+    const secondManual = await enqueueManualTelegramResult(game.id);
+    expect(firstManual.id).not.toBe(secondManual.id);
+    await db.settings.update('main', { telegramAutoSend: true, telegramBotToken: '123:ABC', telegramChatId: '42' });
+    const firstAuto = await enqueueTelegramResult(game.id);
+    const secondAuto = await enqueueTelegramResult(game.id);
+    expect(firstAuto?.id).toBe(secondAuto?.id);
+    expect((await db.telegramOutbox.toArray()).filter((item) => item.kind === 'game_result_manual')).toHaveLength(2);
+    expect((await db.telegramOutbox.toArray()).filter((item) => item.kind === 'game_result_auto')).toHaveLength(1);
   });
   it('لا يصدّر أسرار Telegram في النسخة الاحتياطية', async () => { await db.settings.update('main', { telegramBotToken: 'secret', telegramChatId: 'private', telegramThreadId: '7' }); const backup = await exportBackup(); expect(backup.data.settings[0]).not.toHaveProperty('telegramBotToken'); expect(backup.data.settings[0]).not.toHaveProperty('telegramChatId'); });
   it('حذف المباراة لا يترك عداد gamesPlayed هشًا أو سجل تشغيل يتيمًا', async () => { const game = tarneeb(31); game.players[0].profileId = 'profile'; await db.players.add({ id: 'profile', name: 'a', createdAt: '', updatedAt: '' }); await createGame(game); await db.conditionalRuleFirings.add({ id: 'delete-firing', ruleId: 'rule', gameId: game.id, event: 'tarneeb', alternativeId: 'message', roundIndex: 0, firedAt: new Date().toISOString() }); await deleteGame(game.id); expect((await db.players.get('profile'))?.gamesPlayed).toBeUndefined(); expect(await db.conditionalRuleFirings.where('gameId').equals(game.id).count()).toBe(0); });

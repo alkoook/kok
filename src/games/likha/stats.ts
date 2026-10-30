@@ -1,5 +1,5 @@
 import type { GameRound, GameSession, LikhaRoundInput } from '../../types';
-import { calculateLikhaRound } from './engine';
+import { aggregateLikhaTeamScores, calculateLikhaRound } from './engine';
 
 export type LikhaPlayerStats = {
   profileId: string; name: string; games: number; wins: number; losses: number; winRate: number;
@@ -24,10 +24,10 @@ export function calculateLikhaPlayerStats(games: GameSession[], rounds: GameRoun
       const item = map.get(player.profileId!) ?? { profileId: player.profileId!, name: player.name, games: 0, wins: 0, losses: 0, totalHearts: 0, queenSpades: 0, doubledQueenSpades: 0, jackDiamonds: 0, doubledJackDiamonds: 0, kingClubs: 0, doubledKingClubs: 0, tenDiamonds: 0, doubledTenDiamonds: 0, positiveTenPoints: 0, largestNegativeSwing: 0, limitBreaches: 0, finalScores: [], roundScores: [] };
       const team = game.likhaMode === 'partnership' ? game.teams?.find((entry) => entry.playerIds.includes(player.id)) : undefined;
       item.name = player.name; item.games += 1; const won = game.winnerIds?.includes(team?.id ?? player.id) ?? false; item.wins += won ? 1 : 0; item.losses += won ? 0 : 1;
-      const final = game.scores[player.id] ?? 0; item.finalScores.push(final); const officialFinal = team ? team.playerIds.reduce((sum, id) => sum + (game.scores[id] ?? 0), 0) : final; if (officialFinal <= -lossLimit) item.limitBreaches += 1;
+      const officialFinal = team ? aggregateLikhaTeamScores(game.scores, game.teams!)[team.id] ?? 0 : game.scores[player.id] ?? 0; item.finalScores.push(officialFinal); if (officialFinal <= -lossLimit) item.limitBreaches += 1;
       rounds.filter((round) => round.gameId === game.id && round.type === 'likha').forEach((round) => {
         const input = round.input as LikhaRoundInput; const capture = input.players.find((entry) => entry.playerId === player.id); item.totalHearts += capture?.heartsCount ?? 0;
-        const delta = calculateLikhaRound(input, game.players.map((entry) => entry.id))[player.id] ?? 0; item.roundScores.push(delta); item.largestNegativeSwing = Math.max(item.largestNegativeSwing, Math.max(0, -delta));
+        const delta = calculateLikhaRound(input, game.players.map((entry) => entry.id), game.teams)[player.id]; if (delta !== undefined) { item.roundScores.push(delta); item.largestNegativeSwing = Math.max(item.largestNegativeSwing, Math.max(0, -delta)); }
         const special = input.specialCards;
         if (special.queenSpades.capturedBy === player.id) { item.queenSpades += 1; if (special.queenSpades.doubled) item.doubledQueenSpades += 1; }
         if (special.jackDiamonds.capturedBy === player.id) { item.jackDiamonds += 1; if (special.jackDiamonds.doubled) item.doubledJackDiamonds += 1; }
@@ -57,7 +57,7 @@ export function calculateLikhaPartnershipStats(games: GameSession[]): LikhaPartn
       const item = map.get(key) ?? { profileIds: [ordered[0].profileId, ordered[1].profileId], names: [ordered[0].name, ordered[1].name], games: 0, wins: 0, losses: 0, finals: [] };
       const won = game.winnerIds?.includes(team.id) ?? false;
       item.games += 1; item.wins += won ? 1 : 0; item.losses += won ? 0 : 1;
-      item.finals.push(team.playerIds.reduce((sum, id) => sum + (game.scores[id] ?? 0), 0));
+      item.finals.push(aggregateLikhaTeamScores(game.scores, game.teams!)[team.id] ?? 0);
       map.set(key, item);
     });
   });
